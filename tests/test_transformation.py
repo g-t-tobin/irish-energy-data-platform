@@ -1,6 +1,9 @@
+import json
+from unittest.mock import Mock, patch
+
 import pytest
 
-from src.transformation import transform_demand_payload
+from src.transformation import process_bronze_object, transform_demand_payload
 
 
 def test_transform_demand_payload():
@@ -101,3 +104,40 @@ def test_transform_excludes_missing_demand_and_reports_count():
     assert len(df) == 1
     assert df.iloc[0]["demand_mw"] == 4200
     assert df.attrs["excluded_missing_demand"] == 1
+
+
+def test_process_bronze_object_uses_requested_key():
+    payload = {
+        "Rows": [
+            {
+                "EffectiveTime": "29-Oct-2026 12:00:00",
+                "FieldName": "SYSTEM_DEMAND",
+                "Region": "ROI",
+                "Value": 4200,
+            }
+        ]
+    }
+
+    s3_client = Mock()
+    s3_client.get_object.return_value = {
+        "Body": Mock(read=Mock(return_value=json.dumps(payload).encode()))
+    }
+
+    with (
+        patch("src.transformation.boto3.client", return_value=s3_client),
+        patch(
+            "src.transformation.save_silver_to_s3",
+            return_value="silver/test.parquet",
+        ) as save,
+    ):
+        result = process_bronze_object(
+            "test-bucket",
+            "bronze/test.json",
+        )
+
+    s3_client.get_object.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="bronze/test.json",
+    )
+    assert save.call_args.args[1] == "test-bucket"
+    assert result == "silver/test.parquet"

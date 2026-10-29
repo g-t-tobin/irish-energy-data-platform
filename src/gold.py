@@ -53,7 +53,48 @@ def build_daily_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
+
+def process_silver_object(bucket: str, silver_key: str) -> str:
+    """Build daily metrics from a specific Silver Parquet object."""
+    if not bucket:
+        raise ValueError("An S3 bucket name is required")
+    if not silver_key:
+        raise ValueError("A Silver object key is required")
+
+    s3 = boto3.client("s3")
+    body = s3.get_object(Bucket=bucket, Key=silver_key)["Body"].read()
+    df = pd.read_parquet(io.BytesIO(body))
+
+    metrics = build_daily_metrics(df)
+
+    now = datetime.now(timezone.utc)
+    key = (
+        "gold/eirgrid/daily_demand/"
+        f"run_date={now:%Y-%m-%d}/daily_demand.parquet"
+    )
+
+    output = io.BytesIO()
+    metrics.to_parquet(
+        output, index=False, engine="pyarrow", compression="snappy"
+    )
+
+    s3.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=output.getvalue(),
+        ContentType="application/vnd.apache.parquet",
+    )
+
+    print(f"Source: s3://{bucket}/{silver_key}")
+    print(f"Daily metric rows: {len(metrics)}")
+    print(f"Saved: s3://{bucket}/{key}")
+    print(metrics.to_string(index=False))
+
+    return key
+
+
 def main() -> None:
+    """Process the latest Silver Parquet file when run standalone."""
     bucket = os.environ.get("S3_BUCKET")
     if not bucket:
         raise SystemExit("Set the S3_BUCKET environment variable.")
@@ -72,34 +113,8 @@ def main() -> None:
         raise SystemExit("No Silver Parquet files found.")
 
     latest = max(objects, key=lambda obj: obj["LastModified"])
-    body = s3.get_object(Bucket=bucket, Key=latest["Key"])["Body"].read()
-    df = pd.read_parquet(io.BytesIO(body))
-
-    metrics = build_daily_metrics(df)
-
-    now = datetime.now(timezone.utc)
-    key = (
-        "gold/eirgrid/daily_demand/"
-        f"run_date={now:%Y-%m-%d}/"
-        f"daily_demand_{now:%Y%m%dT%H%M%SZ}.parquet"
-    )
-
-    output = io.BytesIO()
-    metrics.to_parquet(
-        output, index=False, engine="pyarrow", compression="snappy"
-    )
-
-    s3.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=output.getvalue(),
-        ContentType="application/vnd.apache.parquet",
-    )
-
-    print(f"Source: s3://{bucket}/{latest['Key']}")
-    print(f"Daily metric rows: {len(metrics)}")
-    print(f"Saved: s3://{bucket}/{key}")
-    print(metrics.to_string(index=False))
+    key = process_silver_object(bucket, latest["Key"])
+    print(f"Gold output: s3://{bucket}/{key}")
 
 
 if __name__ == "__main__":

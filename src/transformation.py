@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import boto3
 import pandas as pd
 
-
 REQUIRED_COLUMNS = {"EffectiveTime", "FieldName", "Region", "Value"}
 
 
@@ -113,6 +112,29 @@ def save_silver_to_s3(df: pd.DataFrame, bucket: str) -> str:
     return key
 
 
+def process_bronze_object(bucket: str, bronze_key: str) -> str:
+    """Transform a specific Bronze JSON object and save Silver Parquet."""
+    if not bucket:
+        raise ValueError("An S3 bucket name is required")
+    if not bronze_key:
+        raise ValueError("A Bronze object key is required")
+
+    s3 = boto3.client("s3")
+    response = s3.get_object(Bucket=bucket, Key=bronze_key)
+    payload = json.loads(response["Body"].read())
+
+    df = transform_demand_payload(payload)
+    excluded = df.attrs["excluded_missing_demand"]
+    silver_key = save_silver_to_s3(df, bucket)
+
+    print(f"Bronze object: {bronze_key}")
+    print(f"Silver records written: {len(df)}")
+    print(f"Records excluded for missing demand: {excluded}")
+    print(f"Saved Parquet to s3://{bucket}/{silver_key}")
+
+    return silver_key
+
+
 def main() -> None:
     """Read the latest Bronze object and create a Silver dataset."""
     bucket = os.environ.get("S3_BUCKET")
@@ -130,21 +152,8 @@ def main() -> None:
         raise SystemExit("No Bronze objects found.")
 
     latest = max(objects, key=lambda obj: obj["LastModified"])
-    raw = s3.get_object(
-        Bucket=bucket,
-        Key=latest["Key"],
-    )["Body"].read()
-
-    payload = json.loads(raw)
-    df = transform_demand_payload(payload)
-    excluded = df.attrs["excluded_missing_demand"]
-    key = save_silver_to_s3(df, bucket)
-
-    print(f"Bronze object: {latest['Key']}")
-    print(f"Silver records written: {len(df)}")
-    print(f"Records excluded for missing demand: {excluded}")
-    print(f"Saved Parquet to s3://{bucket}/{key}")
-    print(df.head().to_string(index=False))
+    silver_key = process_bronze_object(bucket, latest["Key"])
+    print(f"Silver output: s3://{bucket}/{silver_key}")
 
 
 if __name__ == "__main__":
