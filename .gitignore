@@ -11,3 +11,12 @@ cdk.out/
 dist/
 build/
 *.pyc
+# Credentials and private keys
+aws-access-key.txt
+irish-energy-data-platform-public-key-git
+
+# Local CDK output
+infrastructure/cdk.out/
+
+# Local SSH public key
+irish-energy-data-platform-public-key-git.pub
