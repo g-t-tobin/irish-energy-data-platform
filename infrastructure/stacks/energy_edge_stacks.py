@@ -10,12 +10,15 @@ from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_certificatemanager as acm
 from aws_cdk import aws_cloudfront as cloudfront
 from aws_cdk import aws_cloudfront_origins as origins
+from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
-from energy_config import EdgeConfig
+from energy_config import ApiServiceConfig, EdgeConfig
+from stacks.energy_api_service import ApiService
 
 PROJECT_TAG = "irish-energy-data-platform"
 
@@ -23,12 +26,25 @@ PROJECT_TAG = "irish-energy-data-platform"
 class EnergyApiEdgeStack(Stack):
     """HTTPS Application Load Balancer for the energy API hostname.
 
-    No service is attached yet: unmatched requests get 404 and the API
-    hostname gets a fixed 503 until an ECS service stack adds a target group.
+    Without a service config, unmatched requests get 404 and the API hostname
+    gets a fixed 503. With one (and the registry's repository), the hostname is
+    forwarded to the ECS Fargate API service defined in energy_api_service.py.
     """
 
-    def __init__(self, scope: Construct, construct_id: str, *, config: EdgeConfig, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        config: EdgeConfig,
+        service: ApiServiceConfig | None = None,
+        repository: ecr.IRepository | None = None,
+        table: dynamodb.ITable | None = None,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+        if len({service is None, repository is None, table is None}) != 1:
+            raise ValueError("service, repository and table must be provided together")
         Tags.of(self).add("Project", PROJECT_TAG)
         Tags.of(self).add("Component", "api-edge")
 
@@ -76,14 +92,30 @@ class EnergyApiEdgeStack(Stack):
                 404, content_type="text/plain", message_body="Not found"
             ),
         )
-        https.add_action(
-            "EnergyApiHost",
-            priority=10,
-            conditions=[elbv2.ListenerCondition.host_headers([config.api_hostname])],
-            action=elbv2.ListenerAction.fixed_response(
-                503, content_type="text/plain", message_body="Service not deployed yet"
-            ),
-        )
+        if service is None or repository is None or table is None:
+            https.add_action(
+                "EnergyApiHost",
+                priority=10,
+                conditions=[elbv2.ListenerCondition.host_headers([config.api_hostname])],
+                action=elbv2.ListenerAction.fixed_response(
+                    503, content_type="text/plain", message_body="Service not deployed yet"
+                ),
+            )
+        else:
+            # Keeps S3 traffic (Gold reads, image layers) on the AWS network at no cost.
+            vpc.add_gateway_endpoint("S3Endpoint", service=ec2.GatewayVpcEndpointAwsService.S3)
+            api_service = ApiService(
+                self,
+                "ApiService",
+                vpc=vpc,
+                listener=https,
+                repository=repository,
+                table=table,
+                config=service,
+                api_hostname=config.api_hostname,
+            )
+            CfnOutput(self, "ClusterName", value=api_service.cluster.cluster_name)
+            CfnOutput(self, "ServiceName", value=api_service.service.service_name)
 
         CfnOutput(self, "ApiHostname", value=config.api_hostname)
         CfnOutput(self, "AlbDnsName", value=alb.load_balancer_dns_name)

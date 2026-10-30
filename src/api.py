@@ -68,10 +68,6 @@ async def lifespan(app: FastAPI):
         logger.error(
             "Authentication is not configured; protected routes will return 503."
         )
-    if get_settings_backend() == "sqlite" and os.environ.get("API_ENV", "production") == "production":
-        logger.warning(
-            "Run history uses local SQLite; it is not shared or durable across tasks."
-        )
     # Runs left active by a previous process cannot be trusted as finished.
     try:
         recovered = get_store().recover_interrupted()
@@ -80,13 +76,6 @@ async def lifespan(app: FastAPI):
     except RunStoreError:
         logger.exception("Run history storage unavailable at startup")
     yield
-
-
-def get_settings_backend() -> str:
-    try:
-        return load_run_history_settings(os.environ).backend
-    except Exception:
-        return "invalid"
 
 
 router = APIRouter()

@@ -11,6 +11,8 @@ COGNITO_ENV = {
     "COGNITO_REGION": "eu-west-1",
     "COGNITO_USER_POOL_ID": "eu-west-1_AbC123xyz",
     "COGNITO_APP_CLIENT_ID": "abcdefghij1234567890",
+    "RUN_HISTORY_BACKEND": "dynamodb",
+    "RUN_HISTORY_TABLE": "irish-energy-run-history",
 }
 
 

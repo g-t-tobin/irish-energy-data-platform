@@ -182,6 +182,32 @@ as DynamoDB, with explicitly scoped IAM permissions, behind `src/run_store.py`.
 
 Inspect it read-only: `sqlite3 -readonly .local/run_history.sqlite3 "SELECT run_id, status, stage, created_at FROM runs ORDER BY created_at DESC LIMIT 10;"`
 
+## Container image
+
+The API image is built from the repository root (the build context is limited by
+`.dockerignore` to `requirements-api.txt` and `src/`):
+
+```bash
+docker build --platform linux/amd64 -t irish-energy-api:local .
+
+# Local mode with the Cognito settings (no AWS credentials are baked in; pass them only
+# if you choose to read real S3 data, never in the image). API_ENV=production additionally
+# requires RUN_HISTORY_BACKEND=dynamodb and RUN_HISTORY_TABLE and exits otherwise.
+docker run --rm -p 8000:8000 --read-only --tmpfs /tmp --cap-drop ALL \
+    -e API_ENV=local \
+  -e COGNITO_REGION=eu-west-1 -e COGNITO_USER_POOL_ID=<pool id> -e COGNITO_APP_CLIENT_ID=<client id> \
+  -e CORS_ALLOWED_ORIGINS=https://energy.ai-autofy-general-server.com \
+  -e S3_BUCKET=<bucket> \
+  irish-energy-api:local
+curl -i http://127.0.0.1:8000/health      # 200, needs no token
+curl -i http://127.0.0.1:8000/api/runs    # 401 without a Cognito access token
+```
+
+The image runs as a non-root user (10001), serves with Uvicorn on `0.0.0.0:${PORT}`
+(default 8000), and has a built-in health check (`python -m src.healthcheck`). Without the `COGNITO_*` settings, or without `RUN_HISTORY_BACKEND=dynamodb` and `RUN_HISTORY_TABLE`, `API_ENV=production` refuses to start. Pipeline execution is
+disabled and cannot be enabled by configuration. Locally, run history uses SQLite under `/tmp`; in production it is the shared DynamoDB table. An optional real build test is
+`RUN_DOCKER_TESTS=1 pytest tests/test_container_image.py`.
+
 ## Running the API locally
 
 ```bash

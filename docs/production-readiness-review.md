@@ -14,10 +14,7 @@ believed but unverified, **[Open]** needs an administrator or a decision.
 ready to deploy as it stands.** The application layer (authentication,
 authorization, rate limiting, sanitization, run history, execution gate) is
 implemented and tested. The infrastructure layer is only partly defined: of the
-twelve areas in the brief, only the ALB/VPC edge, the CloudFront/S3 frontend and the
-Glue/Athena data lake exist as synthesizable CDK. The API service, container images,
-DynamoDB table, Step Functions, pipeline compute, logging and Cognito are missing or
-exist only as design data. See sections 4 and 6.
+twelve areas in the brief, the ALB/VPC edge, the CloudFront/S3 frontend, the Glue/Athena data lake, the ECR registry, the ECS Fargate API service and the DynamoDB run-history table now exist as synthesizable CDK (none deployed). Step Functions and the pipeline compute exist only as design data, and alarms and Cognito are missing. See sections 4 and 6.
 
 ## 2. Validation run for this review
 
@@ -44,11 +41,12 @@ tested against real AWS, Cognito, DynamoDB or Step Functions.
 | Cognito JWT verification (RS256, issuer, `client_id`, access tokens only), viewer/operator roles | implemented and tested with local test keys |
 | Rate limiting, request-size limit, sanitized errors, request IDs, redacting JSON logs, security headers | implemented and tested |
 | Production startup guard (Cognito settings mandatory in production) | implemented and tested |
-| Run history: SQLite (local) and DynamoDB store with lock, lease, idempotency, recovery | implemented; DynamoDB tested only against an in-memory double |
+| Run history: SQLite (local) and DynamoDB store with lock, lease, idempotency, recovery | implemented; DynamoDB store tested only against an in-memory double; table, permissions and production-only DynamoDB startup rule defined and tested offline (Phase 9.2), not deployed |
 | Step Functions executor and reconciler | implemented and tested, **not wired** into the API |
 | Execution gate (disabled executor, settings refuse enabling, POST returns 503 for operators) | implemented and tested |
 | Frontend sign-in (Amplify, Hosted UI, PKCE, in-memory tokens), GET-only API client, role-based display | implemented and tested with mocks |
 | Edge CDK: ALB with HTTPS listener, CloudFront + private S3, hostname and certificate guards | synthesizes and is tested offline |
+| API container image and ECS Fargate service, ECR registry, task and execution roles (Phase 9.1) | image built and run locally; CDK synthesizes and is tested offline; not deployed |
 | DNS and certificate documentation | written |
 | Design data: DynamoDB table, state machine, three IAM policies | written and tested as data only |
 
@@ -56,16 +54,16 @@ tested against real AWS, Cognito, DynamoDB or Step Functions.
 
 | Area | Finding |
 |---|---|
-| **ECS Fargate API service** | **Missing.** No cluster, task definition, service, task role or execution role. No Dockerfile exists. |
+| **ECS Fargate API service** | **Defined in CDK (Phase 9.1), not deployed.** Cluster (no Container Insights), Fargate task definition (0.25 vCPU, 1 GB, x86, non-root, read-only root, capabilities dropped, init process, `/tmp` volume), service (1 task, public IP, rolling update with circuit breaker), separate execution and task roles. Included when `apiImageTag` and the Cognito IDs are supplied. The image builds and runs locally. |
 | **ALB listener** | Present: 443 HTTPS with the eu-west-1 certificate ARN and a TLS 1.3/1.2 policy; 80 redirects to 443; deletion protection and invalid-header dropping on. Unmatched requests get 404. |
-| **Target groups and health checks** | **Missing.** The `energy-api` host rule returns a fixed 503. The API exposes `GET /health` (public, `{"status":"ok"}`) for a future health check. |
+| **Target groups and health checks** | **Defined.** IP target group on port 8000 with `GET /health` (public, expects 200, 30 s interval, 2 healthy / 3 unhealthy), forwarded for the energy host only (priority 10). Without service inputs the host still returns the fixed 503. |
 | **VPC and security groups** | Own VPC, 2 public subnets, internet gateway, no NAT. The ALB security group allows 443 and 80 from anywhere and has **no egress rule**, so it cannot reach a target until one is added. No task security group, no VPC endpoints (S3 and DynamoDB gateway endpoints are free and advisable), no flow logs. |
-| **DynamoDB** | **Spec only** (`infrastructure/run_control/spec.py`): on-demand, GSI `gsi1`, TTL attribute `expires_at`, point-in-time recovery, deletion protection, retain. No CDK construct. The TTL attribute applies only to idempotency items. |
+| **DynamoDB** | **Defined in CDK (Phase 9.2), not deployed** (`IrishEnergyRunHistoryStack`, built from `infrastructure/run_control/spec.py`): on-demand, keys `pk`/`sk`, index `gsi1` (all attributes), TTL attribute `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained. The TTL applies only to idempotency items. The ECS task role can use exactly this table and index. |
 | **Step Functions** | **Spec only.** The definition has retry, timeout and `Catch` on every stage, conditional DynamoDB writes, lock release and an overall 30-minute timeout. No state machine resource, no execution log group, no logging permissions. |
 | **Pipeline compute** | **Undefined and in conflict with the brief.** The ADR proposes Lambda container images; this review's brief asks for Fargate task definitions. Neither exists, and no Lambda handlers wrap the stage functions. |
-| **ECR** | **Missing.** No repositories, scanning, lifecycle policy or image build. |
+| **ECR** | **Defined** (`IrishEnergyApiRegistryStack`): `irish-energy-api`, scan on push, AES-256, immutable tags, retained, untagged images removed after 14 days, newest 30 kept. Pipeline image repository still missing. |
 | **S3 and CloudFront** | Present: private encrypted bucket (HTTPS-only policy, retained), origin access control, redirect to HTTPS, TLS 1.2 minimum, HSTS and other headers, SPA fallbacks, aliased to `energy.` with the us-east-1 certificate ARN. **Missing:** a way to upload the built site and invalidate the cache, a Content-Security-Policy, access logging. The site loads fonts from Google at runtime, which a strict CSP would block. |
-| **CloudWatch** | **Missing.** No log groups, retention, metric alarms or dashboards; the ALB has no access logs. |
+| **CloudWatch** | **API log group defined** (30-day retention, retained). Still missing: alarms, dashboards, ALB access logs, Step Functions logging. |
 | **Cognito prerequisites** | **Missing** (not created by design). Needed: user pool, public app client with no secret, Hosted UI domain, callback and sign-out URLs for `https://energy.ai-autofy-general-server.com/`, groups `viewer` and `operator`, short access-token lifetime, MFA for operators. |
 | **ACM and DNS** | Documented only. Two separate certificates (eu-west-1 for the API, us-east-1 for CloudFront) and the alias and validation records are manual steps (`docs/deployment-dns-and-certificates.md`). |
 | **Data lake** | `IrishEnergyDataLakeStack` (Glue database and table, Athena workgroup) synthesizes. Whether it is deployed is [Reported] as yes by the owner while the README says it is unestablished; the developer identity was denied Glue and Athena access. |
@@ -85,7 +83,7 @@ created, and none was changed.
 
 | # | Policy / used by | Permitted actions and resources | Wildcards | Unnecessary or to remove | Administrator must create |
 |---|---|---|---|---|---|
-| 1 | **API task role** (ECS task, design) | `s3:ListBucket` on the bucket, only for prefix `gold/eirgrid/daily_demand/*`; `s3:GetObject` on `.../gold/eirgrid/daily_demand/*`; DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query` on the table and `index/gsi1`; `states:StartExecution` on the one state machine; `states:DescribeExecution` on `execution:run-pipeline:*` | Prefix `*` in S3 ARN and condition; `:*` on execution names. No action wildcards, no `*` resource. | `states:StartExecution` and `DescribeExecution` are unused while execution is disabled: attach them only at activation. `DeleteItem` is needed (lock release). | the role and policy, trusted by `ecs-tasks.amazonaws.com` |
+| 1 | **API task role** (ECS task, design) | `s3:ListBucket` on the bucket, only for prefix `gold/eirgrid/daily_demand/*`; `s3:GetObject` on `.../gold/eirgrid/daily_demand/*`; DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN and `Query` on the `index/gsi1` ARN only. **Implemented as the CDK task role (Phase 9.2) without any `states:*`**; the design policy in `spec.py` still lists `states:StartExecution` and `DescribeExecution` for activation | Prefix `*` in S3 ARN and condition; `:*` on execution names. No action wildcards, no `*` resource. | `states:StartExecution` and `DescribeExecution` are unused while execution is disabled: attach them only at activation. `DeleteItem` is needed (lock release). | the role and policy, trusted by `ecs-tasks.amazonaws.com` |
 | 2 | **State machine role** (design) | DynamoDB `UpdateItem`, `DeleteItem` on the table; `lambda:InvokeFunction` on the four stage functions | none | none | the role; **plus logging permissions the spec omits** (CloudWatch Logs delivery) if execution logging is enabled; replace the Lambda statement if Fargate tasks are chosen (`ecs:RunTask`, `iam:PassRole`) |
 | 3 | **Pipeline stage role** (design) | `s3:GetObject` on `bronze/*`, `silver/*`; `s3:PutObject` on `bronze/*`, `silver/*`, `gold/*`; `s3:GetObject` on the Gold prefix; `glue:GetTable`, `glue:CreatePartition` on the catalog, one database and one table | `bronze/*`, `silver/*`, `gold/*` prefixes | The `ReadGoldForRegistration` statement is unnecessary: `register_gold_partition` calls Glue only. Remove it. | the role; Glue permissions are the ones the developer identity was denied |
 | 4 | **Site bucket policy** (CDK-generated) | Deny all S3 actions over non-TLS; allow `s3:GetObject` to `cloudfront.amazonaws.com` only when `aws:SourceArn` is the energy distribution | `Principal: "*"` appears only in the TLS **Deny**, which is standard and safe | none | created with the stack |
@@ -109,13 +107,12 @@ created, and none was changed.
 1. **Source is not committed.** Almost all of this work is untracked in Git
    (`frontend/`, `docs/`, most of `src/`, `tests/`, `infrastructure/run_control/`).
    It must be reviewed and committed by the owner before handover.
-2. **No API container image.** No Dockerfile; `requirements-api.txt` lacks `boto3`,
-   `pandas` and `pyarrow`, so an image built from it would fail at the first analytics
-   request.
-3. **No ECS service, target group, ECR repositories, task and execution roles**, and
-   the ALB security group has no egress.
-4. **DynamoDB table and Step Functions are not CDK constructs**; no resource exists
-   for the shared run history the production API requires.
+2. ~~No API container image~~ **Resolved in Phase 9.1:** Dockerfile, `.dockerignore` and
+   corrected pinned `requirements-api.txt`; built and run locally. The image is not
+   pushed anywhere.
+3. ~~No ECS service, target group, ECR or task roles~~ **Resolved as CDK in Phase 9.1**
+   (not deployed). The ALB now has an egress rule to the task port. DynamoDB permissions are now on the task role (Phase 9.2). Remaining: the pipeline repository and a first real deployment.
+4. ~~DynamoDB table not a CDK construct~~ **Resolved in Phase 9.2** (not deployed). **Step Functions is still not a CDK construct**; no state machine or stage compute exists.
 5. **Pipeline compute undecided** (Lambda container versus Fargate task) and no stage
    handlers or images exist.
 6. **No Cognito pool or app client** and no groups.
@@ -132,7 +129,7 @@ created, and none was changed.
 | Risk | Severity | Note |
 |---|---|---|
 | Plaintext `aws-access-key.txt` present in the working directory (git-ignored, untracked; contents not read) | High | Delete it, rotate the key if it was ever shared, use SSO or roles. |
-| Production run history on SQLite if configuration is wrong | High | The app only logs a warning; it does not refuse. Treat `RUN_HISTORY_BACKEND=dynamodb` as a deployment check. |
+| ~~Production run history on SQLite if configuration is wrong~~ | Resolved (Phase 9.2) | `API_ENV=production` now refuses to start without `RUN_HISTORY_BACKEND=dynamodb` and a valid table name; the ECS environment sets them. |
 | Execution activation changes require new code and review | Medium | By design; keep it a separately approved step. |
 | Rate limits and analytics cache are per process | Medium | Multiplied across tasks; add a WAF rate rule at the edge. |
 | No WAF, no CSP, third-party font import | Medium | Self-host fonts, add CSP when Cognito domain is known. |
@@ -162,9 +159,7 @@ created, and none was changed.
    (recommended by the plan) and Lambda versus Fargate for pipeline stages.
 3. Fix `requirements-api.txt`, add a Dockerfile and a non-root image, build and scan
    it locally.
-4. Write the missing CDK constructs: ECR, DynamoDB, ECS service with target group and
-   health check on `/health`, ALB egress, log groups with retention, state machine
-   with logging, stage compute, alarms and a budget alert, using the spec policies.
+4. Write the remaining CDK constructs: state machine with logging, stage compute, alarms and a budget alert, using the spec policies (ECR, ECS service, DynamoDB and log groups are done).
 5. Have an administrator confirm the permissions in handover section 11 and
    create Cognito, certificates and DNS following the handover sequence.
 6. Deploy read-only first (execution disabled), run the smoke tests, then request a

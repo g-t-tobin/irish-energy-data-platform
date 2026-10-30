@@ -4,6 +4,7 @@ from src.settings import (
     LOCAL_DEV_ORIGINS,
     CognitoConfig,
     RateLimits,
+    RunHistorySettings,
     Settings,
     SettingsError,
     load_settings,
@@ -11,7 +12,7 @@ from src.settings import (
 
 
 def test_defaults_are_safe():
-    settings = load_settings(COGNITO_ENV)
+    settings = load_settings(PRODUCTION_ENV)
 
     assert settings == Settings(
         api_env="production",
@@ -24,6 +25,7 @@ def test_defaults_are_safe():
             client_id="abcdefghij1234567890",
         ),
         rate_limits=RateLimits(),
+        run_history=RunHistorySettings(backend="dynamodb", table="irish-energy-run-history"),
     )
 
 
@@ -71,7 +73,7 @@ def test_docs_only_in_local():
 def test_production_origins_must_be_https_and_not_local():
     ok = load_settings(
         {
-            **COGNITO_ENV,
+            **PRODUCTION_ENV,
             "CORS_ALLOWED_ORIGINS": "https://app.example.com/, https://app.example.com",
         }
     )
@@ -109,6 +111,12 @@ COGNITO_ENV = {
     "COGNITO_USER_POOL_ID": "eu-west-1_AbC123xyz",
     "COGNITO_APP_CLIENT_ID": "abcdefghij1234567890",
 }
+# Everything API_ENV=production needs; mirrors the ECS task environment.
+PRODUCTION_ENV = {
+    **COGNITO_ENV,
+    "RUN_HISTORY_BACKEND": "dynamodb",
+    "RUN_HISTORY_TABLE": "irish-energy-run-history",
+}
 
 
 def test_local_without_cognito_is_unconfigured_not_disabled():
@@ -127,9 +135,9 @@ def test_partial_cognito_in_production_still_fails():
 
 
 def test_rate_limit_defaults_and_overrides():
-    defaults = load_settings(COGNITO_ENV).rate_limits
+    defaults = load_settings(PRODUCTION_ENV).rate_limits
     custom = load_settings(
-        {**COGNITO_ENV, "RATE_LIMIT_READ_PER_MINUTE": "10", "RATE_LIMIT_WRITE_PER_HOUR": "2"}
+        {**PRODUCTION_ENV, "RATE_LIMIT_READ_PER_MINUTE": "10", "RATE_LIMIT_WRITE_PER_HOUR": "2"}
     ).rate_limits
 
     assert defaults == RateLimits()
@@ -140,11 +148,11 @@ def test_rate_limit_defaults_and_overrides():
 @pytest.mark.parametrize("value", ["0", "-1", "abc", "1.5", "100001"])
 def test_invalid_rate_limits_are_rejected(value):
     with pytest.raises(SettingsError, match="RATE_LIMIT_READ_PER_MINUTE"):
-        load_settings({**COGNITO_ENV, "RATE_LIMIT_READ_PER_MINUTE": value})
+        load_settings({**PRODUCTION_ENV, "RATE_LIMIT_READ_PER_MINUTE": value})
 
 
 def test_cognito_config_and_derived_urls():
-    cognito = load_settings(COGNITO_ENV).cognito
+    cognito = load_settings(PRODUCTION_ENV).cognito
 
     assert cognito.issuer == "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_AbC123xyz"
     assert cognito.jwks_url == cognito.issuer + "/.well-known/jwks.json"
@@ -203,3 +211,41 @@ def test_enabling_execution_is_still_impossible_with_shared_history():
             {**COGNITO_ENV, "PIPELINE_EXECUTION_ENABLED": "true", "RUN_HISTORY_BACKEND": "dynamodb",
              "RUN_HISTORY_TABLE": "irish-energy-runs"}
         )
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        {"RUN_HISTORY_BACKEND": None, "RUN_HISTORY_TABLE": None},
+        {"RUN_HISTORY_BACKEND": "sqlite"},
+        {"RUN_HISTORY_TABLE": None},
+        {"RUN_HISTORY_TABLE": "bad table!"},
+        {"RUN_HISTORY_REGION": "nowhere"},
+    ],
+)
+def test_production_refuses_to_start_with_incomplete_run_history_config(missing):
+    env = {**PRODUCTION_ENV, **missing}
+    env = {k: v for k, v in env.items() if v is not None}
+
+    with pytest.raises(SettingsError, match="RUN_HISTORY"):
+        load_settings(env)
+
+
+def test_production_never_falls_back_to_sqlite_silently():
+    with pytest.raises(SettingsError, match="requires RUN_HISTORY_BACKEND=dynamodb"):
+        load_settings({**COGNITO_ENV, "API_ENV": "production"})
+
+
+def test_complete_production_config_uses_dynamodb_and_keeps_execution_disabled():
+    settings = load_settings({**PRODUCTION_ENV, "RUN_HISTORY_REGION": "eu-west-1"})
+
+    assert settings.run_history == RunHistorySettings(
+        backend="dynamodb", table="irish-energy-run-history", region="eu-west-1"
+    )
+    assert settings.pipeline_execution_enabled is False
+
+
+def test_local_development_can_still_use_sqlite():
+    settings = load_settings({"API_ENV": "local", **COGNITO_ENV})
+
+    assert settings.run_history.backend == "sqlite"

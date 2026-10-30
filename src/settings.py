@@ -192,6 +192,13 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             "and COGNITO_APP_CLIENT_ID."
         )
 
+    run_history = load_run_history_settings(env)
+    if production and run_history.backend != "dynamodb":
+        # A SQLite file is neither shared nor durable across tasks; never fall back to it.
+        raise SettingsError(
+            "API_ENV=production requires RUN_HISTORY_BACKEND=dynamodb and RUN_HISTORY_TABLE."
+        )
+
     return Settings(
         api_env=api_env,
         cors_allowed_origins=origins,
@@ -199,5 +206,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         enable_api_docs=enable_docs,
         cognito=cognito,
         rate_limits=_load_rate_limits(env),
-        run_history=load_run_history_settings(env),
+        run_history=run_history,
     )

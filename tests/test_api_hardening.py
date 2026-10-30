@@ -395,6 +395,8 @@ def test_production_app_with_cognito_requires_tokens(monkeypatch):
     monkeypatch.setenv("COGNITO_REGION", "eu-west-1")
     monkeypatch.setenv("COGNITO_USER_POOL_ID", "eu-west-1_AbC123xyz")
     monkeypatch.setenv("COGNITO_APP_CLIENT_ID", "abcdefghij1234567890")
+    monkeypatch.setenv("RUN_HISTORY_BACKEND", "dynamodb")
+    monkeypatch.setenv("RUN_HISTORY_TABLE", "irish-energy-run-history")
 
     client = TestClient(api.__getattr__("app"))
 

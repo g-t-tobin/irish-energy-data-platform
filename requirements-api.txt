@@ -1,3 +1,10 @@
-fastapi
-uvicorn[standard]
-PyJWT[crypto]>=2.8,<3
+# Production dependencies of the API image (docker build uses only this file).
+# boto3: S3 Gold reads and the DynamoDB run-history store. pandas + pyarrow: reading
+# Gold Parquet in src/analytics.py. PyJWT[crypto]: Cognito token verification.
+# Plain uvicorn (no uvloop/watchfiles extras) is enough behind an ALB.
+fastapi==0.162.0
+uvicorn==0.54.0
+PyJWT[crypto]==2.15.1
+boto3==1.43.121
+pandas==3.1.0
+pyarrow==26.0.0

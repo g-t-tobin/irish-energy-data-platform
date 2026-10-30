@@ -26,7 +26,29 @@ RESERVED_HOSTNAMES = frozenset(
 
 API_CERTIFICATE_CONTEXT = "apiCertificateArn"
 FRONTEND_CERTIFICATE_CONTEXT = "frontendCertificateArn"
+API_IMAGE_TAG_CONTEXT = "apiImageTag"
+COGNITO_POOL_CONTEXT = "cognitoUserPoolId"
+COGNITO_CLIENT_CONTEXT = "cognitoAppClientId"
 
+# Explicit service settings (no secrets): see docs/administrator-handover.md.
+ECR_REPOSITORY_NAME = "irish-energy-api"
+RUN_HISTORY_TABLE_NAME = "irish-energy-run-history"
+DATA_LAKE_BUCKET = "irish-energy-data-platform-851725545966"
+GOLD_PREFIX = "gold/eirgrid/daily_demand/"
+CONTAINER_PORT = 8000
+HEALTH_CHECK_PATH = "/health"
+TASK_CPU = 256
+TASK_MEMORY_MIB = 1024
+DESIRED_COUNT = 1
+LOG_RETENTION_DAYS = 30
+CONTAINER_USER = "10001:10001"
+
+_IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+_POOL_RE = re.compile(r"^(?P<region>[a-z]{2}(?:-[a-z]+)+-\d)_[A-Za-z0-9]+$")
+_CLIENT_RE = re.compile(r"^[A-Za-z0-9]{10,128}$")
+_SECRET_ARN_RE = re.compile(
+    rf"^arn:aws:secretsmanager:{REGION}:{ACCOUNT}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{{6}}$"
+)
 _LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 _CERT_ARN_RE = re.compile(
     r"^arn:aws:acm:(?P<region>[a-z]{2}(?:-[a-z]+)+-\d):(?P<account>\d{12}):"
@@ -99,4 +121,54 @@ def load_edge_config(
         frontend_certificate_arn=validate_certificate_arn(
             frontend_arn, region=CLOUDFRONT_CERTIFICATE_REGION, purpose="Frontend"
         ),
+    )
+
+
+@dataclass(frozen=True)
+class ApiServiceConfig:
+    """Settings of the ECS Fargate API service. Cognito IDs are identifiers, not secrets."""
+
+    image_tag: str
+    cognito_region: str
+    user_pool_id: str
+    app_client_id: str
+    bucket: str = DATA_LAKE_BUCKET
+    allowed_origin: str = f"https://{FRONTEND_HOSTNAME}"
+    container_port: int = CONTAINER_PORT
+    cpu: int = TASK_CPU
+    memory_mib: int = TASK_MEMORY_MIB
+    desired_count: int = DESIRED_COUNT
+    health_check_path: str = HEALTH_CHECK_PATH
+    log_retention_days: int = LOG_RETENTION_DAYS
+    # Environment variable name -> Secrets Manager ARN. Empty: the API needs no secrets.
+    secret_arns: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        for name, arn in self.secret_arns:
+            if not re.match(r"^[A-Z][A-Z0-9_]*$", name) or not _SECRET_ARN_RE.match(arn):
+                raise ConfigError(f"Invalid secret mapping for {name!r}.")
+
+
+def load_service_config(get_context: Callable[[str], Any]) -> ApiServiceConfig | None:
+    """None when none of the service inputs are supplied; all three are needed together."""
+    tag = get_context(API_IMAGE_TAG_CONTEXT)
+    pool = get_context(COGNITO_POOL_CONTEXT)
+    client = get_context(COGNITO_CLIENT_CONTEXT)
+    if not (tag or pool or client):
+        return None
+    if not (tag and pool and client):
+        raise ConfigError(
+            f"Provide all of -c {API_IMAGE_TAG_CONTEXT}=..., -c {COGNITO_POOL_CONTEXT}=... "
+            f"and -c {COGNITO_CLIENT_CONTEXT}=... to include the API service."
+        )
+    if tag == "latest" or not _IMAGE_TAG_RE.match(str(tag)):
+        # Repository tags are immutable; a moving tag would never deploy a new image.
+        raise ConfigError("apiImageTag must be a specific version tag (not 'latest').")
+    match = _POOL_RE.match(str(pool))
+    if not match or match["region"] != REGION:
+        raise ConfigError(f"cognitoUserPoolId must be a user pool in {REGION}.")
+    if not _CLIENT_RE.match(str(client)):
+        raise ConfigError("cognitoAppClientId is not a valid app client ID.")
+    return ApiServiceConfig(
+        image_tag=str(tag), cognito_region=REGION, user_pool_id=str(pool), app_client_id=str(client)
     )

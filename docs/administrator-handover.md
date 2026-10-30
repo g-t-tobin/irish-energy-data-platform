@@ -28,6 +28,7 @@ the project owner and not re-checked, **[Assumption]**, **[Open]** needs a check
 | Pipeline compute: Lambda container image (ADR) versus Fargate task | [Open] decision |
 | Whether the game uses a shared CDK bootstrap stack in this account/region | [Open] check before bootstrapping |
 | Whether the game's hosted zone is the one for the domain | [Assumption] same public zone |
+| API container image | built and run locally with Docker (521 MB, non-root, read-only root, health check, 401 without a token) [Confirmed]; not pushed anywhere |
 | Pipeline execution | disabled in code and must stay disabled until step 12 |
 
 ## 2. AWS resources to create
@@ -42,16 +43,18 @@ or administrator work. Name all new resources with an `irish-energy` prefix.
 | Route 53 validation CNAMEs and alias records | manual (section 6) |
 | VPC (2 public subnets, no NAT), internet gateway | CDK exists (`IrishEnergyApiEdgeStack`) |
 | Internet-facing ALB, 443 listener, 80 redirect, host rule | CDK exists |
-| Target group, ALB egress rule, task security group | to write |
-| ECR repositories (API image, pipeline image), scan on push, lifecycle policy | to write |
-| ECS cluster, Fargate task definition and service for the API, log group | to write |
-| DynamoDB run-history table with `gsi1` and TTL on `expires_at` | spec only (`infrastructure/run_control/spec.py`) |
+| Target group (port 8000, `/health`), ALB egress to the task port, task security group, S3 gateway VPC endpoint | CDK exists (inside `IrishEnergyApiEdgeStack`, included when the service inputs are given) |
+| ECR repository `irish-energy-api` (scan on push, AES-256, immutable tags, lifecycle) | CDK exists (`IrishEnergyApiRegistryStack`, always synthesized, needs no certificates) |
+| ECS cluster, Fargate task definition and service for the API, log group (30 days), execution and task roles | CDK exists (`IrishEnergyApiEdgeStack`) |
+| ECR repository for a pipeline image | to write (depends on the pipeline compute decision) |
+| DynamoDB run-history table `irish-energy-run-history` (keys `pk`/`sk`, index `gsi1`, TTL on `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained) | CDK exists (`IrishEnergyRunHistoryStack`, always synthesized, no certificates needed; built from `infrastructure/run_control/spec.py`) |
 | Step Functions state machine, execution log group | spec only |
 | Pipeline stage compute (four Lambda container functions or Fargate task definitions) | to write; decision open |
 | CloudWatch log groups with retention, alarms, AWS Budget | to write |
 | Cognito user pool, public app client (no secret), Hosted UI domain, groups `viewer` and `operator` | manual or new CDK |
 | S3 site bucket, CloudFront distribution, origin access control, response headers policy | CDK exists (`IrishEnergyFrontendStack`) |
-| S3 and DynamoDB gateway VPC endpoints | to write (free; recommended) |
+| S3 gateway VPC endpoint | CDK exists (with the service) |
+| DynamoDB gateway VPC endpoint | to write (free; recommended: keeps run-history traffic off the internet) |
 | Glue database/table, Athena workgroup | CDK exists (`IrishEnergyDataLakeStack`) |
 
 Never create, modify or replace the game's ALB, CloudFront distribution, certificate,
@@ -65,8 +68,8 @@ audit table is in the readiness review (section 5). Summary:
 
 | Role | Trusted by | Allowed |
 |---|---|---|
-| API task role | `ecs-tasks.amazonaws.com` | read Gold prefix only; run-history table and `gsi1` (`GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`); at activation only: `states:StartExecution`, `states:DescribeExecution` |
-| ECS task execution role | `ecs-tasks.amazonaws.com` | pull from the two ECR repositories; write the API log group |
+| API task role (CDK, this phase) | `ecs-tasks.amazonaws.com` (account-conditioned) | `s3:ListBucket` on the bucket for prefix `gold/eirgrid/daily_demand/*` and `s3:GetObject` on that prefix, plus, on the run-history table only: `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN and `dynamodb:Query` on the `gsi1` index ARN (exactly what `src/dynamodb_run_store.py` calls; `PutItem` also covers its write transaction). No Scan, Batch, table-management, KMS, Step Functions, Glue, Athena, IAM or Cognito permissions. `states:*` is attached only at activation |
+| ECS task execution role (CDK) | `ecs-tasks.amazonaws.com` (account-conditioned) | pull from the one API repository (`ecr:BatchCheckLayerAvailability`, `GetDownloadUrlForLayer`, `BatchGetImage`), `ecr:GetAuthorizationToken` (resource `*` is unavoidable for this action), `logs:CreateLogStream` and `PutLogEvents` on the one log group; `secretsmanager:GetSecretValue` on exact ARNs only if secrets are ever configured |
 | State machine role | `states.amazonaws.com` | `UpdateItem`, `DeleteItem` on the table; invoke the stage functions (or `ecs:RunTask` and `iam:PassRole` if Fargate); log delivery |
 | Pipeline stage role | Lambda or ECS tasks | `GetObject` bronze/silver, `PutObject` bronze/silver/gold, Glue `GetTable` and `CreatePartition` on one table |
 | Frontend deployer | an administrator or CI | site bucket upload/delete/list; `cloudfront:CreateInvalidation` on one distribution |
@@ -91,10 +94,13 @@ Do not reuse or assume the game's certificate. See
 | Variable | Value |
 |---|---|
 | `API_ENV` | `production` (startup fails without Cognito settings) |
+| `PORT` / `HEALTH_CHECK_PATH` | `8000` / `/health` |
+| `AWS_DEFAULT_REGION` | `eu-west-1` |
+| `FORWARDED_ALLOW_IPS` | the VPC CIDR (set by CDK); never `*`, so clients cannot forge their address |
 | `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_APP_CLIENT_ID` | from the new Cognito pool |
 | `CORS_ALLOWED_ORIGINS` | `https://energy.ai-autofy-general-server.com` |
 | `S3_BUCKET` | `irish-energy-data-platform-851725545966` |
-| `RUN_HISTORY_BACKEND` / `RUN_HISTORY_TABLE` / `RUN_HISTORY_REGION` | `dynamodb` / the table name / `eu-west-1` |
+| `RUN_HISTORY_BACKEND` / `RUN_HISTORY_TABLE` / `RUN_HISTORY_REGION` | `dynamodb` / `irish-energy-run-history` (set by CDK from the table) / `eu-west-1`. **Required in production:** with `API_ENV=production` the app refuses to start unless these are set, and never falls back to SQLite. SQLite (`RUN_HISTORY_DB_PATH`) remains for local development only |
 | `RATE_LIMIT_READ_PER_MINUTE`, `_ANALYTICS_PER_MINUTE`, `_WRITE_PER_HOUR`, `_AUTH_FAILURES_PER_MINUTE` | optional; defaults 60, 30, 5, 20 |
 | `ANALYTICS_CACHE_TTL_SECONDS`, `EXPECTED_INTERVAL_MINUTES` | optional; defaults 300, 15 |
 | `PIPELINE_EXECUTION_ENABLED` | leave unset; the app refuses `true` |
@@ -109,8 +115,11 @@ image must add `boto3`, `pandas` and `pyarrow` to the API dependencies.
 `VITE_COGNITO_REDIRECT_SIGN_IN` and `_SIGN_OUT` (both `https://energy.ai-autofy-general-server.com/`),
 optional `VITE_COGNITO_SCOPES`. Never include a client secret.
 
-**CDK context** (not committed): `-c apiCertificateArn=...` (eu-west-1) and
-`-c frontendCertificateArn=...` (us-east-1).
+**CDK context** (not committed): `-c apiCertificateArn=...` (eu-west-1),
+`-c frontendCertificateArn=...` (us-east-1), and, to include the ECS service,
+`-c apiImageTag=<version tag, not latest>`, `-c cognitoUserPoolId=...`,
+`-c cognitoAppClientId=...` (all three together). The Cognito IDs are identifiers, not
+secrets. The API needs **no** secrets, so Secrets Manager is not used or granted.
 
 ## 6. DNS records
 
@@ -131,8 +140,8 @@ Each step depends on those before it. Stop at any failed check.
 |---|---|---|---|
 | 1 | Administrator prerequisites: confirm permissions (section 11); decide bootstrap; commit source; remove plaintext key file | owner review | everything else assumes these |
 | 2 | Issue both ACM certificates and add DNS validation records | step 1, hosted zone access | the ALB and CloudFront stacks need issued ARNs |
-| 3 | Create ECR repositories; build, scan and push the API image (and pipeline image); fix API dependencies | step 1 | the ECS service needs an image |
-| 4 | Create the DynamoDB table (`spec.table_definition`) | step 1 | the API with `RUN_HISTORY_BACKEND=dynamodb` and the state machine need it |
+| 3 | Deploy `IrishEnergyApiRegistryStack` (the repository only), then build, scan and push the API image with an explicit version tag | step 1 | the ECS service needs an image; tags are immutable so every release needs a new tag |
+| 4 | Deploy `IrishEnergyRunHistoryStack` (the table, built from `spec.table_definition`) | step 1 | the ECS service stack imports its name and ARN, so it must exist first; the state machine will need it too |
 | 5 | Create the state machine, stage compute and roles (execution still disabled; do not attach `states:StartExecution` to the API role yet) | steps 3, 4 | defined early so activation later is a configuration step, but unused until step 12 |
 | 6 | Deploy the ECS API service and ALB target group with the health check on `/health` | steps 2, 3, 4 | the ALB must forward `energy-api.` to a healthy service |
 | 7 | Cognito: pool, public app client, Hosted UI domain, groups, test users, callback URLs for the energy origin | step 1 | the API (step 6 env) and frontend build need its IDs; can be done in parallel with 6 but must finish before 8 and 11 |
@@ -169,6 +178,19 @@ npx cdk diff IrishEnergyApiEdgeStack IrishEnergyFrontendStack \
 npx cdk deploy IrishEnergyApiEdgeStack IrishEnergyFrontendStack --require-approval broadening \
   -c apiCertificateArn=<eu-west-1 arn> -c frontendCertificateArn=<us-east-1 arn>
 
+# Step 3: registry first, then build and push the image (explicit version tag, amd64)
+npx cdk deploy IrishEnergyApiRegistryStack
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin 851725545966.dkr.ecr.eu-west-1.amazonaws.com
+docker build --platform linux/amd64 -t 851725545966.dkr.ecr.eu-west-1.amazonaws.com/irish-energy-api:v0.1.0 ..
+docker push 851725545966.dkr.ecr.eu-west-1.amazonaws.com/irish-energy-api:v0.1.0
+# Step 4: the run-history table (needs no context; deletion-protected and retained)
+npx cdk diff IrishEnergyRunHistoryStack
+npx cdk deploy IrishEnergyRunHistoryStack
+
+# Step 6: include the service in the edge stack by adding
+#   -c apiImageTag=v0.1.0 -c cognitoUserPoolId=<pool> -c cognitoAppClientId=<client>
+# to the cdk diff / cdk deploy commands above (Cognito must exist first: step 7).
+
 # Step 8: frontend
 cd frontend && npm ci && npm run build   # with the VITE_* variables set
 aws s3 sync dist/ s3://<SiteBucketName> --delete
@@ -198,15 +220,48 @@ Use access tokens, not ID tokens. Confirm the game is unaffected before and afte
 should return the same responses as before. The two POST checks use the disabled
 endpoint on purpose and must not start anything.
 
+### Run history in DynamoDB (Phase 9.2)
+
+`IrishEnergyRunHistoryStack` creates one on-demand table. Key design: `pk`/`sk` strings;
+run items `RUN#<id>`, one lock item `LOCK#pipeline`, idempotency items `IDEM#<hash>`; the
+`gsi1` index (`gsi1pk`/`gsi1sk`, all attributes) lists runs newest first. TTL on
+`expires_at` removes expired idempotency records (run records have no TTL). Encryption
+at rest uses the AWS managed key `alias/aws/dynamodb` (no key to pay for or administer,
+no extra IAM). The table is retained on stack deletion, has deletion protection and
+point-in-time recovery, and the name is fixed so the task role and settings agree.
+
+Startup safety: the container exits non-zero (ECS rolls the deployment back and the
+ALB never receives traffic) if `API_ENV=production` is set without
+`RUN_HISTORY_BACKEND=dynamodb` or a valid `RUN_HISTORY_TABLE` and `RUN_HISTORY_REGION`.
+If the table is unreachable at runtime the API stays up, logs the failure and answers
+run-history requests with a generic 503.
+
+Migration: there is nothing to migrate; local SQLite history is development data and
+execution is disabled, so the table starts empty. Rollback is described in section 9.
+
+### Networking decision for the API tasks (no NAT)
+
+The VPC has no NAT gateway and this phase does not add one. Options considered:
+
+| Option | Works? | Extra monthly cost (approximate, same assumptions as section 10) |
+|---|---|---|
+| **A. Public subnets, public IP, locked-down security groups (chosen)**: task SG accepts only the ALB SG on port 8000 and allows only outbound 443; free S3 gateway endpoint | yes | about 3.4 EUR per task for the public IPv4 address |
+| B. Private subnets, no NAT, VPC interface endpoints: `ecr.api`, `ecr.dkr`, `logs` (plus `secretsmanager` only if secrets are used) and the S3 gateway endpoint | **not viable as designed**: the API must download Cognito's signing keys from `cognito-idp.eu-west-1.amazonaws.com/<pool>/.well-known/jwks.json`; whether a Cognito endpoint serves that path is unverified, and without it every token is rejected | 3 interface endpoints in 2 zones is about 44 EUR plus data processing |
+| C. Private subnets with a NAT gateway | yes | about 35 EUR or more plus data processing |
+
+Option A is the cheapest and works; its trade-off is that tasks hold public IPs, which
+the security groups make unreachable except through the ALB. If policy requires
+private tasks, choose C. Do not add a NAT gateway silently.
+
 ## 9. Rollback
 
+0. API service only: redeploy the edge stack without the service inputs (it returns to the 503 placeholder), or set the desired count to 0.
 1. Remove the two alias records (`energy-api.`, `energy.`) only.
 2. Destroy the energy stacks (`cdk destroy IrishEnergyFrontendStack IrishEnergyApiEdgeStack`).
    The site bucket is retained (empty and delete it separately); switch off ALB
    deletion protection first.
 3. Remove the new certificates and their validation CNAMEs.
-4. Run history: switch `RUN_HISTORY_BACKEND` back to `sqlite` for local use; the
-   DynamoDB table is retained (deletion protection, point-in-time recovery).
+4. Run history: the DynamoDB table is retained (deletion protection, point-in-time recovery). Remove the service stack first; the table's stack cannot be destroyed while the service imports it, and the table itself must have deletion protection switched off before it can be deleted. Production cannot be rolled back to SQLite by configuration (the app refuses to start); use a local environment for SQLite.
 5. A stuck active-run lock expires after 45 minutes, or delete the single item
    `LOCK#pipeline` after confirming no execution is running.
 6. If execution was ever activated, revert the activation change first.
@@ -219,14 +274,14 @@ All figures are **approximate** and for planning only. Assumptions: eu-west-1 li
 prices from memory (not looked up), about USD 1 = EUR 0.92; Linux x86 Fargate at about
 USD 0.0445 per vCPU-hour and USD 0.0049 per GB-hour; ALB about USD 0.025 per hour
 plus LCUs; public IPv4 addresses about USD 0.005 per hour each; one API task of 0.25
-vCPU and 0.5 GB running continuously (730 h); 30 pipeline runs a month of about 10
+vCPU and 1 GB running continuously (730 h); 30 pipeline runs a month of about 10
 minutes; negligible traffic; AWS free tiers apply (CloudFront 1 TB, Step Functions
 4,000 transitions, 100 GB data transfer out, Cognito first 10,000 users). Verify with
 the AWS Pricing Calculator.
 
 | Resource | Low-usage portfolio (EUR / month) | Idle cost? |
 |---|---|---|
-| ECS Fargate API task (0.25 vCPU, 0.5 GB, 24/7) | about 9 | **yes** |
+| ECS Fargate API task (0.25 vCPU, 1 GB, 24/7) | about 10.8 | **yes** |
 | Public IPv4 for the task | about 3.4 | **yes** |
 | Application Load Balancer (hourly + minimal LCU) | about 19 | **yes** |
 | Public IPv4 for the ALB (2 zones) | about 6.7 | **yes** |
@@ -239,10 +294,10 @@ the AWS Pricing Calculator.
 | CloudWatch (logs about 0.3 GB, about 5 alarms) | about 0.6 to 1 | alarms |
 | Data transfer (inside the free 100 GB; same-region S3 and DynamoDB traffic) | 0 | no |
 | Cognito, ACM, Route 53 records (existing zone shared with the game) | 0 | no |
-| **Total** | **about 40 (range 35 to 45)** | almost all of it is idle cost |
+| **Total** | **about 42 (range 37 to 47)** | almost all of it is idle cost |
 
 Costs that accrue with no traffic: the ALB and its two IPs (about 26), the API task and
-its IP (about 12.5), alarms. Ways to reduce it: delete the ALB and service between
+its IP (about 14), alarms. Ways to reduce it: delete the ALB and service between
 demos (saves most of it), use API Gateway HTTP API with Lambda instead of ECS and an
 ALB (near zero idle cost, but needs different packaging), or run the API in Lambda and
 keep only CloudFront and S3 (about 1 to 3). A NAT gateway (about 35 or more) is

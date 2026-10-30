@@ -323,15 +323,19 @@ def run_app(tmp_path, ctx=None, env_extra=None):
     return result, sorted(p.name for p in tmp_path.glob("*.template.json"))
 
 
-def test_app_synthesizes_only_the_data_lake_without_certificates(tmp_path):
+def test_app_synthesizes_the_data_lake_and_registry_without_certificates(tmp_path):
     result, templates_ = run_app(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert templates_ == ["IrishEnergyDataLakeStack.template.json"]
+    assert templates_ == [
+        "IrishEnergyApiRegistryStack.template.json",
+        "IrishEnergyDataLakeStack.template.json",
+        "IrishEnergyRunHistoryStack.template.json",
+    ]
     assert "skipped" in result.stdout
 
 
-def test_app_synthesizes_all_three_independent_stacks_with_both_certificates(tmp_path):
+def test_app_synthesizes_all_independent_stacks_with_both_certificates(tmp_path):
     ctx = {"apiCertificateArn": API_CERT, "frontendCertificateArn": FRONTEND_CERT}
 
     result, templates_ = run_app(tmp_path, ctx)
@@ -339,8 +343,10 @@ def test_app_synthesizes_all_three_independent_stacks_with_both_certificates(tmp
     assert result.returncode == 0, result.stderr
     assert templates_ == [
         "IrishEnergyApiEdgeStack.template.json",
+        "IrishEnergyApiRegistryStack.template.json",
         "IrishEnergyDataLakeStack.template.json",
         "IrishEnergyFrontendStack.template.json",
+        "IrishEnergyRunHistoryStack.template.json",
     ]
 
 
