@@ -65,11 +65,16 @@ nothing. Do not touch `api.` or `play.`.
 
 ## 4. Synthesize locally (no AWS access)
 
-The edge stacks are only included when both certificate ARNs are supplied;
-without them `cdk synth` produces just the existing data lake stack.
+Without certificates `cdk synth` produces five stacks: `IrishEnergyDataLakeStack`,
+`IrishEnergyApiRegistryStack`, `IrishEnergyRunHistoryStack`, `IrishEnergyPipelineStack` and
+`IrishEnergyWorkflowStack`. The two edge stacks (`IrishEnergyApiEdgeStack`, `IrishEnergyFrontendStack`) are added
+only when both certificate ARNs are supplied, giving seven. The optional reconciler stack makes eight
+(`-c reconcilerEnabled=true`; its schedule stays disabled unless `-c reconcilerScheduleState=ENABLED`).
+Every stack, the data lake included, is pinned to account `851725545966` and region `eu-west-1`.
 
 ```bash
 cd infrastructure
+export CDK_DEFAULT_ACCOUNT=851725545966 CDK_DEFAULT_REGION=eu-west-1
 npx cdk synth \
   -c apiCertificateArn=arn:aws:acm:eu-west-1:851725545966:certificate/<api-cert-id> \
   -c frontendCertificateArn=arn:aws:acm:us-east-1:851725545966:certificate/<frontend-cert-id>
@@ -78,7 +83,8 @@ npx cdk synth \
 Synthesis writes templates to `cdk.out`; it does not deploy. Do not commit real
 ARNs; pass them on the command line. The code stops with a clear error if one ARN
 is missing, a certificate is in the wrong region or account, or the active
-account is not `851725545966`. Tests run the same synthesis offline with
+account is not exactly `851725545966`. `CDK_DEFAULT_ACCOUNT` must be set explicitly, offline too: a missing, empty or blank value is refused
+(checked before any stack is created, so no template is written). Tests run the same synthesis offline with
 placeholder ARNs (`tests/test_energy_edge_infrastructure.py`).
 
 ## 5. What the stacks create (when deployed later)

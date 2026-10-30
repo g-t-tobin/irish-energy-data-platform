@@ -97,6 +97,22 @@ _CERT_ARN_RE = re.compile(
 )
 
 
+def validate_deployment_account(env: Mapping[str, str]) -> None:
+    """Require CDK_DEFAULT_ACCOUNT to be exactly ACCOUNT; reads only the environment, no AWS calls.
+
+    The value must be set explicitly for offline synthesis as well. Stacks are pinned to ACCOUNT and
+    REGION, so CDK_DEFAULT_REGION is not used.
+    """
+    value = env.get("CDK_DEFAULT_ACCOUNT")
+    if value is None or not value.strip():
+        raise ConfigError(
+            f"Refusing to synthesize: CDK_DEFAULT_ACCOUNT is missing or blank; it must be exactly {ACCOUNT}. "
+            f"Run with CDK_DEFAULT_ACCOUNT={ACCOUNT} CDK_DEFAULT_REGION={REGION}."
+        )
+    if value != ACCOUNT:
+        raise ConfigError(f"Refusing to synthesize for account {value!r}; CDK_DEFAULT_ACCOUNT must be exactly {ACCOUNT}.")
+
+
 class ConfigError(ValueError):
     """The edge configuration is invalid or unsafe; stop before synthesizing."""
 

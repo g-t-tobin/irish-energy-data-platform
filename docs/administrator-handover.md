@@ -173,6 +173,7 @@ aws acm request-certificate --region us-east-1 --domain-name energy.ai-autofy-ge
 
 # Steps 6 and 8: review, then deploy only the energy stacks
 cd infrastructure
+export CDK_DEFAULT_ACCOUNT=851725545966 CDK_DEFAULT_REGION=eu-west-1   # required by every cdk command below
 npx cdk diff IrishEnergyApiEdgeStack IrishEnergyFrontendStack \
   -c apiCertificateArn=<eu-west-1 arn> -c frontendCertificateArn=<us-east-1 arn>
 npx cdk deploy IrishEnergyApiEdgeStack IrishEnergyFrontendStack --require-approval broadening \
@@ -739,3 +740,35 @@ or other resources were added; proposed alarms (to create separately):
 EventBridge Scheduler delivery and permissions, the zip deployment, `DescribeExecution` behaviour and rates, real Lambda error
 names, EMF ingestion, and every IAM statement above. Remaining prerequisites: those of Phases 9.4 to 9.6, plus approval to
 synthesise and deploy the reconciler, and the activation change (API calls the reconciler at start-up).
+
+## Phase 9.7: deployment readiness and administrator actions
+
+The full assessment, resource inventory, IAM matrix, findings, cost estimate, deployment sequence and rollback plan are in
+`docs/phase-9.7-production-readiness.md`. Verdict: **ready after specified blockers are resolved.** Nothing was deployed or
+inspected in AWS; every item below is an administrator action or a decision.
+
+Blockers (Critical): confirm the deployment identity and a custom CloudFormation execution policy (not
+`AdministratorAccess`), and check read-only whether CDK is already bootstrapped and whether the game shares that stack;
+verify the supplied API certificate ARN (status, region, hostname coverage) and issue the `us-east-1` certificate for
+`energy.ai-autofy-general-server.com` with DNS validation; create and verify the Cognito user pool, groups and public
+app client (authorization-code grant with PKCE, callback and sign-out URL `https://energy.ai-autofy-general-server.com/`).
+
+Before deployment (High): remove and rotate the plaintext AWS key file in the project directory; confirm Docker, bootstrap
+repository policy and image publishing; confirm Glue and Lake Formation and whether the Glue database, table and Athena
+workgroup already exist; decide the frontend publishing procedure and `VITE_*` build variables; accept or change the
+unpinned data lake stack; verify from a task that Cognito, ECR and CloudWatch are reachable with public IPs and no NAT; verify
+or drop the `aws:SourceAccount` condition on the Lambda role trust. Corrected deployment order: budget alert, permissions and
+bootstrap review, certificates and DNS validation, Cognito, data lake check, ECR registry and API image push, run history,
+pipeline, workflow, optional reconciler (schedule disabled), ECS and ALB, frontend, DNS aliases, HTTPS and sign-in
+verification, read-only smoke tests; supervised pipeline verification only after separate approval.
+
+## Phase 9.7.1 update
+
+The data lake stack is now pinned to account `851725545966`/`eu-west-1` (the "unpinned data lake stack" item above is resolved);
+a different active account stops synthesis. A production frontend build refuses to run without the production API URL and
+Cognito settings. Still open for the administrator: the plaintext key file `aws-access-key.txt` (remove and rotate; contents were
+never read), supervised verification of the Lambda trust condition, and all Critical items. See
+`docs/phase-9.7.1-local-corrections.md`.
+
+Correction: `CDK_DEFAULT_ACCOUNT=851725545966` must be set explicitly (with `CDK_DEFAULT_REGION=eu-west-1`) for every
+`cdk synth`, `diff` or `deploy`; a missing, empty or blank value is refused, not just a different account.

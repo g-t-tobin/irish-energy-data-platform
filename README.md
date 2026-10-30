@@ -118,8 +118,11 @@ From the project root, synthesize the CDK template:
 
 ```bash
 cd infrastructure
-npx cdk synth
+CDK_DEFAULT_ACCOUNT=851725545966 CDK_DEFAULT_REGION=eu-west-1 npx cdk synth
 ```
+
+`CDK_DEFAULT_ACCOUNT` must be set to exactly `851725545966` (missing, blank or any other value stops synthesis), for offline
+synthesis too. It is read from the environment only; no AWS call is made by the check.
 
 Synthesis generates the CloudFormation template. It does not deploy resources to AWS.
 
@@ -315,3 +318,18 @@ live execution. An optional scheduled function (`src/reconcile_runs.py`, `-c rec
 default) can run it independently of the API with minimal permissions. Local tests only: nothing is deployed, the scheduler
 is not created, pipeline execution remains disabled and real AWS behaviour (including Lambda error names) is unverified.
 See `docs/administrator-handover.md`.
+
+## Production readiness assessment (Phase 9.7)
+
+`docs/phase-9.7-production-readiness.md` assesses the platform before any AWS deployment: resource inventory, IAM matrix,
+security, network and HTTPS findings, Cognito and certificate prerequisites, cost estimate, deployment and rollback plan.
+Verdict: ready after specified blockers are resolved (unverified deployment identity and bootstrap state, certificates, Cognito,
+and several runtime behaviours that only a real account can confirm). Nothing was deployed; pipeline execution and the
+reconciler schedule remain disabled.
+
+## Local production-readiness corrections (Phase 9.7.1)
+
+`docs/phase-9.7.1-local-corrections.md`: all stacks are pinned to account `851725545966`/`eu-west-1` and a different
+active account stops synthesis; a production frontend build (`npm run build`) refuses to run without the production
+API and Cognito settings (`npm run build:local` is for local use only); documentation corrections and the Lambda
+trust-condition review. Nothing was deployed.

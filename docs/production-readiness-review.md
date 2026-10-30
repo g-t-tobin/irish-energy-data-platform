@@ -224,3 +224,25 @@ its index; no start, put, S3, Glue or other permission). The schedule is not cre
 behaviour (including a possible `Lambda.Unknown`) is unverified. Structured logs and EMF metrics are defined; alarms are
 proposed only. Execution remains disabled, the lease (45 min) and workflow timeout (30 min) are unchanged and the Gold policy
 is unchanged. Nothing was deployed or run against AWS.
+
+## Phase 9.7 update: deployment readiness assessment
+
+Full report: `docs/phase-9.7-production-readiness.md`. **Verdict: READY AFTER SPECIFIED BLOCKERS ARE RESOLVED.** The code,
+synthesised templates and local tests are in good shape (1,070 backend and infrastructure tests, 73 frontend tests, build and
+lint, five synthesis configurations, no dependency cycle, no `Action: *`, one unavoidable `Resource: *` for
+`ecr:GetAuthorizationToken`), but material AWS behaviour is unverified. Blockers: no verified deployment identity or
+CDK bootstrap state (a shared `CDKToolkit` with the game is possible); the supplied API certificate is unverified and the
+`us-east-1` frontend certificate does not exist; the Cognito pool and client are external and unverified. Should be
+resolved before deployment: Fargate-to-Cognito/ECR/CloudWatch connectivity with public IPs and no NAT (JWKS is fetched
+lazily, so the health check cannot detect a broken path); the account-conditioned trust on the Lambda roles; image
+publication and bootstrap repository policy; Glue and Lake Formation; frontend publishing; the unpinned data lake stack;
+the plaintext key file in the project directory (git-ignored, contents not read: remove and rotate). Estimated cost: about
+EUR 38 to 40 a month minimum (load balancer, three public IPv4 addresses, one Fargate task), about EUR 50 to 60 conservative,
+about EUR 33 to 40 more if NAT were added; prices are unverified estimates. Execution remains disabled and the reconciler
+schedule remains disabled by default.
+
+## Phase 9.7.1 update
+
+The data lake stack is now account-pinned and a wrong active account stops synthesis before any stack exists; production
+frontend builds fail without the required settings; the stack-count statement in the DNS and certificates guide is corrected.
+Details and remaining risks: `docs/phase-9.7.1-local-corrections.md`.

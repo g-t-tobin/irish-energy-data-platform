@@ -314,7 +314,9 @@ def run_app(tmp_path, ctx=None, env_extra=None):
         for k, v in os.environ.items()
         if not k.startswith("AWS_") and k not in {"CDK_DEFAULT_ACCOUNT", "CDK_CONTEXT_JSON"}
     }
+    env.update({"CDK_DEFAULT_ACCOUNT": ACCOUNT, "CDK_DEFAULT_REGION": "eu-west-1"})
     env.update({"CDK_OUTDIR": str(tmp_path), "AWS_EC2_METADATA_DISABLED": "true", **(env_extra or {})})
+    env = {k: v for k, v in env.items() if v is not None}  # None in env_extra unsets a variable
     if ctx is not None:
         env["CDK_CONTEXT_JSON"] = json.dumps(ctx)
     result = subprocess.run(

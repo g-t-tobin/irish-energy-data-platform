@@ -17,6 +17,7 @@ from energy_config import (  # noqa: E402
     load_edge_config,
     load_reconciler_config,
     load_service_config,
+    validate_deployment_account,
 )
 from stacks.data_lake_stack import DataLakeStack  # noqa: E402
 from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
@@ -29,17 +30,18 @@ from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  #
 
 app = cdk.App()
 
-account = os.environ.get("CDK_DEFAULT_ACCOUNT")
-region = os.environ.get("CDK_DEFAULT_REGION", "eu-west-1")
+# Every stack, the data lake included, is pinned to the project's account and region; a different
+# active account stops synthesis before any stack exists.
+try:
+    validate_deployment_account(os.environ)
+except ConfigError as error:
+    raise SystemExit(f"Configuration error: {error}")
 
 DataLakeStack(
     app,
     "IrishEnergyDataLakeStack",
     bucket_name="irish-energy-data-platform-851725545966",
-    env=cdk.Environment(
-        account=account,
-        region=region,
-    ),
+    env=cdk.Environment(account=ACCOUNT, region=REGION),
 )
 
 # Validate configuration first: this refuses any account other than the project's.
