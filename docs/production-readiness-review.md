@@ -60,7 +60,7 @@ tested against real AWS, Cognito, DynamoDB or Step Functions.
 | **VPC and security groups** | Own VPC, 2 public subnets, internet gateway, no NAT. With the service included (Phase 9.1): the ALB may reach the task port only, tasks accept only the ALB and send only HTTPS, and a free S3 gateway endpoint serves both route tables. **Phase 9.3 adds a DynamoDB gateway endpoint** on the same two route tables, with a policy limited to four item actions on the table and `Query` on `gsi1` (a Put-only write transaction is authorised by `PutItem`; there is no `TransactWriteItems` IAM action) (no hourly endpoint charge; other AWS charges still apply). Defined and tested through offline synthesis only: not deployed and never verified against AWS. No flow logs, no interface endpoints. |
 | **DynamoDB** | **Defined in CDK (Phase 9.2), not deployed** (`IrishEnergyRunHistoryStack`, built from `infrastructure/run_control/spec.py`): on-demand, keys `pk`/`sk`, index `gsi1` (all attributes), TTL attribute `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained. The TTL applies only to idempotency items. The ECS task role can use exactly this table and index. |
 | **Step Functions** | **Spec only.** The definition has retry, timeout and `Catch` on every stage, conditional DynamoDB writes, lock release and an overall 30-minute timeout. No state machine resource, no execution log group, no logging permissions. |
-| **Pipeline compute** | **Undefined and in conflict with the brief.** The ADR proposes Lambda container images; this review's brief asks for Fargate task definitions. Neither exists, and no Lambda handlers wrap the stage functions. |
+| **Pipeline compute** | **Defined in CDK (Phase 9.4), not deployed.** The owner chose Lambda container images: four functions (Bronze, Silver, Gold, Glue registration) from one shared x86_64 image, each with its own execution role (S3 prefix-scoped, Glue on one table), 30-day log retention and a 120-300 s timeout (limit 900 s). Handlers wrap the existing, tested stage code. The image is not published and nothing has been invoked; the state machine that chains them is Phase 9.5. |
 | **ECR** | **Defined** (`IrishEnergyApiRegistryStack`): `irish-energy-api`, scan on push, AES-256, immutable tags, retained, untagged images removed after 14 days, newest 30 kept. Pipeline image repository still missing. |
 | **S3 and CloudFront** | Present: private encrypted bucket (HTTPS-only policy, retained), origin access control, redirect to HTTPS, TLS 1.2 minimum, HSTS and other headers, SPA fallbacks, aliased to `energy.` with the us-east-1 certificate ARN. **Missing:** a way to upload the built site and invalidate the cache, a Content-Security-Policy, access logging. The site loads fonts from Google at runtime, which a strict CSP would block. |
 | **CloudWatch** | **API log group defined** (30-day retention, retained). Still missing: alarms, dashboards, ALB access logs, Step Functions logging. |
@@ -88,7 +88,7 @@ created, and none was changed.
 | 3 | **Pipeline stage role** (design) | `s3:GetObject` on `bronze/*`, `silver/*`; `s3:PutObject` on `bronze/*`, `silver/*`, `gold/*`; `s3:GetObject` on the Gold prefix; `glue:GetTable`, `glue:CreatePartition` on the catalog, one database and one table | `bronze/*`, `silver/*`, `gold/*` prefixes | The `ReadGoldForRegistration` statement is unnecessary: `register_gold_partition` calls Glue only. Remove it. | the role; Glue permissions are the ones the developer identity was denied |
 | 4 | **Site bucket policy** (CDK-generated) | Deny all S3 actions over non-TLS; allow `s3:GetObject` to `cloudfront.amazonaws.com` only when `aws:SourceArn` is the energy distribution | `Principal: "*"` appears only in the TLS **Deny**, which is standard and safe | none | created with the stack |
 | 5 | **ECS task execution role** | not defined | n/a | n/a | pull from the two ECR repositories; write to the API log group only |
-| 6 | **Lambda or Fargate execution roles for stages** | not defined | n/a | n/a | logs for their own log groups; image pull |
+| 6 | **Lambda execution roles for stages** (four, CDK Phase 9.4) | S3 `PutObject`/`GetObject` on the exact layer prefixes only (Bronze put; Silver get Bronze, put Silver; Gold get Silver, put Gold); Glue `GetTable` and `CreatePartition` on the catalog, one database and one table; `logs:CreateLogStream` and `PutLogEvents` on own log group | none | none | none (log group is created by CDK); no ECR statement is needed for the CDK image asset; Glue permission availability unverified |
 | 7 | **Scheduler role for reconciliation** | not defined | n/a | n/a | invoke the reconciler (a scheduled job is described in the ADR, not built) |
 | 8 | **Frontend deployer** | not defined | n/a | n/a | `s3:PutObject`, `s3:DeleteObject`, `s3:ListBucket` on the site bucket and `cloudfront:CreateInvalidation` on one distribution |
 | 9 | **CDK deployment** | not defined | n/a | n/a | the bootstrap roles (see handover; check whether the game already uses a shared `CDKToolkit` before touching it) |
@@ -113,8 +113,8 @@ created, and none was changed.
 3. ~~No ECS service, target group, ECR or task roles~~ **Resolved as CDK in Phase 9.1**
    (not deployed). The ALB now has an egress rule to the task port. DynamoDB permissions are now on the task role (Phase 9.2). Remaining: the pipeline repository and a first real deployment.
 4. ~~DynamoDB table not a CDK construct~~ **Resolved in Phase 9.2** (not deployed). **Step Functions is still not a CDK construct**; no state machine or stage compute exists.
-5. **Pipeline compute undecided** (Lambda container versus Fargate task) and no stage
-   handlers or images exist.
+5. **Pipeline compute not deployed** (Lambda container functions are defined in CDK; the image
+   must be published and the Glue permissions confirmed; the state machine is Phase 9.5).
 6. **No Cognito pool or app client** and no groups.
 7. **No logging, retention or alarms.**
 8. **Administrator permissions are unconfirmed**, and the developer identity must not
@@ -171,3 +171,14 @@ created, and none was changed.
 handover package (`docs/administrator-handover.md`) gives an administrator everything
 needed to build the remaining pieces, but blockers 1-9 above must be resolved first.
 Activating pipeline execution is explicitly a later, separately approved step.
+
+## Phase 9.4 update
+
+Four pipeline stage Lambda container functions were added (`IrishEnergyPipelineStack`), with one
+role each. Verified only through unit tests, synthesised CloudFormation tests and a local Docker
+build with invalid-input checks; **never deployed, published to ECR, invoked or tested against
+AWS**. The ECS API task role, the DynamoDB and S3 gateway endpoints and the 503 on
+`POST /api/runs` are unchanged and execution remains disabled. Remaining before execution:
+Phase 9.5 state machine, image publication (CDK bootstrap), Glue permission confirmation, first
+supervised run, and re-sizing memory and timeouts from measurements. See
+`docs/administrator-handover.md`.

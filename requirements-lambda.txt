@@ -1,0 +1,7 @@
+# Runtime dependencies of the pipeline Lambda image. boto3 is NOT listed: the Lambda base
+# image provides it (the pinned versions of pandas/pyarrow match requirements-api.txt).
+pandas==3.1.0
+pyarrow==26.0.0
+requests==2.34.2
+# The runtime's botocore requires python-dateutil < 3; pandas alone would pull 3.x over it.
+python-dateutil>=2.9,<3

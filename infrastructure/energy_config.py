@@ -43,6 +43,31 @@ DESIRED_COUNT = 1
 LOG_RETENTION_DAYS = 30
 CONTAINER_USER = "10001:10001"
 
+# Pipeline stage Lambda functions (Phase 9.4). Initial sizes are estimates, not measurements.
+PIPELINE_FUNCTION_PREFIX = "irish-energy-pipeline"
+PIPELINE_LAMBDA_MAX_TIMEOUT_SECONDS = 900
+GLUE_DATABASE = "irish_energy_analytics"
+GLUE_TABLE = "daily_electricity_demand"
+BRONZE_PREFIX = "bronze/eirgrid/demand_actual/"
+SILVER_PREFIX = "silver/eirgrid/demand_actual/"
+
+
+@dataclass(frozen=True)
+class PipelineStage:
+    key: str  # state name used in the execution input contract
+    handler: str
+    timeout_seconds: int
+    memory_mib: int
+    ephemeral_mib: int = 512  # Parquet is processed in memory; /tmp is not used
+
+
+PIPELINE_STAGES = (
+    PipelineStage("bronze", "src.pipeline_stages.ingest_handler", 120, 256),
+    PipelineStage("silver", "src.pipeline_stages.silver_handler", 300, 1024),
+    PipelineStage("gold", "src.pipeline_stages.gold_handler", 300, 1024),
+    PipelineStage("glue_registration", "src.pipeline_stages.glue_handler", 60, 512),
+)
+
 _IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _POOL_RE = re.compile(r"^(?P<region>[a-z]{2}(?:-[a-z]+)+-\d)_[A-Za-z0-9]+$")
 _CLIENT_RE = re.compile(r"^[A-Za-z0-9]{10,128}$")

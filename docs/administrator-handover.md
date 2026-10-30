@@ -25,7 +25,7 @@ the project owner and not re-checked, **[Assumption]**, **[Open]** needs a check
 | Developer profile is denied Glue and Athena | [Reported] |
 | All other permissions of that profile | [Open] none verified |
 | Hosting: ECS Fargate behind the ALB (API), CloudFront + S3 (frontend) | [Assumption] chosen in the plan; the alternative is API Gateway + Lambda |
-| Pipeline compute: Lambda container image (ADR) versus Fargate task | [Open] decision |
+| Pipeline compute: Lambda container images (four functions, one shared image) | [Decided] by the owner in Phase 9.4; the ECS service stays the API only |
 | Whether the game uses a shared CDK bootstrap stack in this account/region | [Open] check before bootstrapping |
 | Whether the game's hosted zone is the one for the domain | [Assumption] same public zone |
 | API container image | built and run locally with Docker (521 MB, non-root, read-only root, health check, 401 without a token) [Confirmed]; not pushed anywhere |
@@ -49,7 +49,7 @@ or administrator work. Name all new resources with an `irish-energy` prefix.
 | ECR repository for a pipeline image | to write (depends on the pipeline compute decision) |
 | DynamoDB run-history table `irish-energy-run-history` (keys `pk`/`sk`, index `gsi1`, TTL on `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained) | CDK exists (`IrishEnergyRunHistoryStack`, always synthesized, no certificates needed; built from `infrastructure/run_control/spec.py`) |
 | Step Functions state machine, execution log group | spec only |
-| Pipeline stage compute (four Lambda container functions or Fargate task definitions) | to write; decision open |
+| Pipeline stage compute: four Lambda container functions, shared image, one role each (`IrishEnergyPipelineStack`) | CDK exists (Phase 9.4; not deployed, image not published, never invoked) |
 | CloudWatch log groups with retention, alarms, AWS Budget | to write |
 | Cognito user pool, public app client (no secret), Hosted UI domain, groups `viewer` and `operator` | manual or new CDK |
 | S3 site bucket, CloudFront distribution, origin access control, response headers policy | CDK exists (`IrishEnergyFrontendStack`) |
@@ -71,7 +71,7 @@ audit table is in the readiness review (section 5). Summary:
 | API task role (CDK, this phase) | `ecs-tasks.amazonaws.com` (account-conditioned) | `s3:ListBucket` on the bucket for prefix `gold/eirgrid/daily_demand/*` and `s3:GetObject` on that prefix, plus, on the run-history table only: `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN and `dynamodb:Query` on the `gsi1` index ARN (exactly what `src/dynamodb_run_store.py` calls; `PutItem` also covers its write transaction). No Scan, Batch, table-management, KMS, Step Functions, Glue, Athena, IAM or Cognito permissions. `states:*` is attached only at activation |
 | ECS task execution role (CDK) | `ecs-tasks.amazonaws.com` (account-conditioned) | pull from the one API repository (`ecr:BatchCheckLayerAvailability`, `GetDownloadUrlForLayer`, `BatchGetImage`), `ecr:GetAuthorizationToken` (resource `*` is unavoidable for this action), `logs:CreateLogStream` and `PutLogEvents` on the one log group; `secretsmanager:GetSecretValue` on exact ARNs only if secrets are ever configured |
 | State machine role | `states.amazonaws.com` | `UpdateItem`, `DeleteItem` on the table; invoke the stage functions (or `ecs:RunTask` and `iam:PassRole` if Fargate); log delivery |
-| Pipeline stage role | Lambda or ECS tasks | `GetObject` bronze/silver, `PutObject` bronze/silver/gold, Glue `GetTable` and `CreatePartition` on one table |
+| Pipeline stage roles (four, CDK, Phase 9.4) | `lambda.amazonaws.com` (account-conditioned) | one role per stage, see "Pipeline stage Lambda functions (Phase 9.4)" |
 | Frontend deployer | an administrator or CI | site bucket upload/delete/list; `cloudfront:CreateInvalidation` on one distribution |
 
 Do not grant wildcard actions or `Resource: "*"`. Do not widen the developer profile.
@@ -370,10 +370,102 @@ Do not widen the developer profile; use an administrator identity for deployment
 ## 12. Outstanding checks before starting
 
 - [ ] Source committed; plaintext key file removed; key rotated if exposed.
-- [ ] Pipeline compute decision (Lambda container or Fargate) recorded.
+- [x] Pipeline compute decision recorded: Lambda container images (Phase 9.4).
 - [ ] Missing constructs written and synthesized (see readiness review, section 6).
 - [ ] `requirements-api.txt` includes `boto3`, `pandas`, `pyarrow`; image built and scanned.
 - [ ] Existing CDK bootstrap state in the account checked.
 - [ ] Hosted zone confirmed; `energy-api.` and `energy.` names confirmed free.
 - [ ] Budget alert created before deploying the ALB and task.
 - [ ] The owner has approved the sequence; execution activation is a separate approval.
+
+## Pipeline stage Lambda functions (Phase 9.4)
+
+**Decision.** The owner confirmed AWS Lambda container images for the pipeline stages (resolving
+the Lambda-versus-Fargate conflict in the ADR). Step Functions Standard will chain them in
+Phase 9.5; no state machine exists yet. Defined in CDK (`infrastructure/stacks/energy_pipeline_stack.py`,
+stack `IrishEnergyPipelineStack`, always synthesized, no certificates needed). **Not deployed, the
+image is not published, no function has ever been invoked, and nothing was verified against AWS.**
+The ECS Fargate service remains the FastAPI API only and is unchanged.
+
+| Stage | Function | Handler (`src/pipeline_stages.py`) | Existing code it runs |
+|---|---|---|---|
+| Ingestion (Bronze) | `irish-energy-pipeline-bronze` | `ingest_handler` | `fetch_demand_data`, `save_to_s3` |
+| Bronze to Silver | `irish-energy-pipeline-silver` | `silver_handler` | `process_bronze_object` |
+| Silver to Gold | `irish-energy-pipeline-gold` | `gold_handler` | `process_silver_object` |
+| Glue registration | `irish-energy-pipeline-glue-registration` | `glue_handler` | `register_gold_partition` |
+
+All four stages have real implementations; the handlers only validate input, call them and return
+`{"key": ...}` (ingestion also returns `records`; registration returns `partition_created`). No
+handler calls another stage. Input contract (the Phase 6 one): the whole Step Functions state as the
+event, i.e. `run_id` (UUID), `days_back` (1-30, ingestion only) and the previous stage's result as
+`bronze.output.key`, `silver.output.key` or `gold.output.key`. Keys are validated against the layer
+prefix before use, errors are never caught (`StageInputError`, `StageConfigurationError` or the
+underlying error fail the invocation), and the DynamoDB run history is written by the state
+machine (Phase 6), not by these functions. Silver and Gold write timestamped keys, so a Step
+Functions retry of a succeeded-but-timed-out stage can leave an extra object; Glue registration is
+idempotent (`AlreadyExistsException` returns `partition_created: false`).
+
+**Image.** One shared image (`Dockerfile.lambda`, base `public.ecr.aws/lambda/python:3.13`, x86_64)
+holds `src/` plus pandas, pyarrow and requests (`requirements-lambda.txt`); boto3 comes from the
+Lambda runtime. Each function selects its handler with a command override, so there is one large
+dependency layer, not four. Local build and checks (no push, no AWS):
+
+```
+docker build --platform linux/amd64 -f Dockerfile.lambda -t irish-energy-pipeline:local --load .
+docker run --rm --entrypoint python irish-energy-pipeline:local -c "import src.pipeline_stages"
+docker run -d --rm -p 9000:8080 irish-energy-pipeline:local src.pipeline_stages.silver_handler
+curl -XPOST http://localhost:9000/2015-03-31/functions/function/invocations -d '{"run_id":"bad"}'
+```
+
+Only invalid inputs should be sent this way: a valid ingestion event would call EirGrid and S3.
+
+**Initial sizes** (estimates, not measured; configured in `infrastructure/energy_config.py`,
+`PIPELINE_STAGES`; adjust after the first supervised run). Ephemeral storage stays at the 512 MiB
+default because every stage processes Parquet and JSON in memory. Each timeout is below the 600 s
+the Phase 6 state machine allows a task and far below Lambda's hard 900 s limit.
+
+| Stage | Memory | Timeout | Reasoning |
+|---|---|---|---|
+| Bronze | 256 MiB | 120 s | one HTTP request (30 s timeout) and a small JSON upload; no pandas work |
+| Silver | 1024 MiB | 300 s | pandas and pyarrow parse the JSON and write Parquet |
+| Gold | 1024 MiB | 300 s | reads Silver Parquet and aggregates |
+| Glue registration | 512 MiB | 60 s | two Glue calls, but the shared module imports pandas at start-up |
+
+**Execution roles** (one per function, trusted by `lambda.amazonaws.com` for this account only, no
+managed policies; every statement is `Allow` with no conditions):
+
+| Stage | Permissions |
+|---|---|
+| all | `logs:CreateLogStream`, `logs:PutLogEvents` on the function's own log group (30-day retention) |
+| Bronze | `s3:PutObject` on `bronze/eirgrid/demand_actual/*` |
+| Silver | `s3:GetObject` on `bronze/eirgrid/demand_actual/*`; `s3:PutObject` on `silver/eirgrid/demand_actual/*` |
+| Gold | `s3:GetObject` on `silver/eirgrid/demand_actual/*`; `s3:PutObject` on `gold/eirgrid/daily_demand/*` |
+| Glue registration | `glue:GetTable`, `glue:CreatePartition` on the catalog, database `irish_energy_analytics` and table `daily_electricity_demand` (no S3) |
+
+No bucket-level or `s3:ListBucket` access (the handlers receive exact keys), no DynamoDB, Athena,
+KMS, IAM, Cognito, EC2, Step Functions or ECR permissions, no `*` resources. The Glue catalogue
+ARN is required by the Glue API alongside the database and table. Functions are not attached to a
+VPC, so they reach EirGrid over the public internet without a NAT gateway. If the bucket is later
+encrypted with a customer-managed KMS key, key permissions will be needed (not assessed: the bucket
+is imported, not managed here). `tests/test_energy_pipeline_infrastructure.py` runs the handlers
+against recording doubles and checks every S3 and Glue call against the role of the stage that made it.
+
+**Image publishing.** The image is a CDK image asset (one asset shared by all four functions);
+synthesis stages the build context but makes no AWS calls and builds nothing. The asset is
+published to the CDK bootstrap repository when `cdk deploy` runs, which needs the account to be
+bootstrapped (state not checked) and a deployer allowed to push to it. A separate ECR repository was
+not created, and the API repository `irish-energy-api` is untouched. The bootstrap repository policy
+is what lets Lambda pull the image; confirm this on a bootstrapped account.
+
+**Outputs for Phase 9.5** (CloudFormation exports from `IrishEnergyPipelineStack`):
+`IrishEnergyPipeline-BronzeFunctionArn`, `...-SilverFunctionArn`, `...-GoldFunctionArn`,
+`...-GlueRegistrationFunctionArn`. The state machine role will need `lambda:InvokeFunction` on those
+four ARNs and DynamoDB `UpdateItem`/`DeleteItem` on the run table (spec.py).
+
+**Deployment prerequisites.** Administrator confirmation that the deployer may create Lambda
+functions, IAM roles and log groups and publish the image asset; `glue:GetTable` and
+`glue:CreatePartition` on the Glue table (not weakened; if unavailable the registration stage cannot
+work); the `irish_energy_analytics` database and `daily_electricity_demand` table must exist
+(`DataLakeStack`); Lambda limits: 15 minutes per invocation, so a stage that outgrows the sizes
+above must be redesigned, not given a longer timeout. Pipeline execution remains disabled; the API
+role has no Lambda or Step Functions permission; Phase 9.5 adds the state machine and any activation.

@@ -13,6 +13,7 @@ import aws_cdk as cdk  # noqa: E402
 from energy_config import ACCOUNT, REGION, ConfigError, load_edge_config, load_service_config  # noqa: E402
 from stacks.data_lake_stack import DataLakeStack  # noqa: E402
 from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
+from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
 from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
 from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  # noqa: E402
 
@@ -52,6 +53,13 @@ registry = EnergyApiRegistryStack(
 run_history = EnergyRunHistoryStack(
     app,
     "IrishEnergyRunHistoryStack",
+    env=cdk.Environment(account=ACCOUNT, region=REGION),
+)
+
+# Pipeline stage Lambda functions: no certificates needed; not invoked by anything yet.
+EnergyPipelineStack(
+    app,
+    "IrishEnergyPipelineStack",
     env=cdk.Environment(account=ACCOUNT, region=REGION),
 )
 

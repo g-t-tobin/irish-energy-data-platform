@@ -277,3 +277,12 @@ Run history can be kept in a shared DynamoDB table instead of local SQLite
 policies are specified as data in `infrastructure/run_control/spec.py` and
 explained in `docs/adr/0001-shared-run-history-and-step-functions.md`, including
 migration and rollback. A DynamoDB gateway VPC endpoint with a table-and-index-only policy keeps the API's run-history traffic on the AWS network (no hourly endpoint charge; defined and tested by offline synthesis, not deployed or verified against AWS). Nothing is deployed, the Step Functions executor is not wired into the API, and pipeline execution stays disabled.
+
+## Pipeline stage Lambda functions (Phase 9.4)
+
+Four Lambda container functions (Bronze, Silver, Gold, Glue registration) wrap the existing stage
+code (`src/pipeline_stages.py`). They share one image (`Dockerfile.lambda`) and are defined in
+`infrastructure/stacks/energy_pipeline_stack.py` with separate least-privilege roles. Build locally with
+`docker build --platform linux/amd64 -f Dockerfile.lambda -t irish-energy-pipeline:local --load .`.
+Not deployed, not published and never invoked; the Step Functions state machine is the next phase
+and pipeline execution remains disabled. See `docs/administrator-handover.md`.

@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1
+# One shared image for the four pipeline stage functions; each function selects its handler
+# with a command override (see infrastructure/energy_config.py). Build from the repository root:
+#   docker build --platform linux/amd64 -f Dockerfile.lambda -t irish-energy-pipeline:local --load .
+FROM public.ecr.aws/lambda/python:3.13
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1
+COPY requirements-lambda.txt ./
+RUN pip install --no-compile --target "${LAMBDA_TASK_ROOT}" -r requirements-lambda.txt
+COPY src ${LAMBDA_TASK_ROOT}/src
+# Configuration (S3_BUCKET) comes from the function environment; the handler is set per function.
+CMD ["src.pipeline_stages.ingest_handler"]

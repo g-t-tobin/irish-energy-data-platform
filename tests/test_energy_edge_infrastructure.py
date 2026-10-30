@@ -330,6 +330,7 @@ def test_app_synthesizes_the_data_lake_and_registry_without_certificates(tmp_pat
     assert templates_ == [
         "IrishEnergyApiRegistryStack.template.json",
         "IrishEnergyDataLakeStack.template.json",
+        "IrishEnergyPipelineStack.template.json",
         "IrishEnergyRunHistoryStack.template.json",
     ]
     assert "skipped" in result.stdout
@@ -346,6 +347,7 @@ def test_app_synthesizes_all_independent_stacks_with_both_certificates(tmp_path)
         "IrishEnergyApiRegistryStack.template.json",
         "IrishEnergyDataLakeStack.template.json",
         "IrishEnergyFrontendStack.template.json",
+        "IrishEnergyPipelineStack.template.json",
         "IrishEnergyRunHistoryStack.template.json",
     ]
 
