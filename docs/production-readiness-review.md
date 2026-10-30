@@ -59,7 +59,7 @@ tested against real AWS, Cognito, DynamoDB or Step Functions.
 | **Target groups and health checks** | **Defined.** IP target group on port 8000 with `GET /health` (public, expects 200, 30 s interval, 2 healthy / 3 unhealthy), forwarded for the energy host only (priority 10). Without service inputs the host still returns the fixed 503. |
 | **VPC and security groups** | Own VPC, 2 public subnets, internet gateway, no NAT. With the service included (Phase 9.1): the ALB may reach the task port only, tasks accept only the ALB and send only HTTPS, and a free S3 gateway endpoint serves both route tables. **Phase 9.3 adds a DynamoDB gateway endpoint** on the same two route tables, with a policy limited to four item actions on the table and `Query` on `gsi1` (a Put-only write transaction is authorised by `PutItem`; there is no `TransactWriteItems` IAM action) (no hourly endpoint charge; other AWS charges still apply). Defined and tested through offline synthesis only: not deployed and never verified against AWS. No flow logs, no interface endpoints. |
 | **DynamoDB** | **Defined in CDK (Phase 9.2), not deployed** (`IrishEnergyRunHistoryStack`, built from `infrastructure/run_control/spec.py`): on-demand, keys `pk`/`sk`, index `gsi1` (all attributes), TTL attribute `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained. The TTL applies only to idempotency items. The ECS task role can use exactly this table and index. |
-| **Step Functions** | **Spec only.** The definition has retry, timeout and `Catch` on every stage, conditional DynamoDB writes, lock release and an overall 30-minute timeout. No state machine resource, no execution log group, no logging permissions. |
+| **Step Functions** | **Defined in CDK (Phase 9.5), not deployed.** A Standard state machine from the Phase 6 generator chains the four Lambda stages with bounded retries on Lambda service errors only, `Catch` on every stage, conditional DynamoDB progress writes, lock release and a 30-minute limit. Synthesised and simulated locally against the real handlers; never executed. No execution logging. |
 | **Pipeline compute** | **Defined in CDK (Phase 9.4), not deployed.** The owner chose Lambda container images: four functions (Bronze, Silver, Gold, Glue registration) from one shared x86_64 image, each with its own execution role (S3 prefix-scoped, Glue on one table), 30-day log retention and a 120-300 s timeout (limit 900 s). Handlers wrap the existing, tested stage code. The image is not published and nothing has been invoked; the state machine that chains them is Phase 9.5. |
 | **ECR** | **Defined** (`IrishEnergyApiRegistryStack`): `irish-energy-api`, scan on push, AES-256, immutable tags, retained, untagged images removed after 14 days, newest 30 kept. Pipeline image repository still missing. |
 | **S3 and CloudFront** | Present: private encrypted bucket (HTTPS-only policy, retained), origin access control, redirect to HTTPS, TLS 1.2 minimum, HSTS and other headers, SPA fallbacks, aliased to `energy.` with the us-east-1 certificate ARN. **Missing:** a way to upload the built site and invalidate the cache, a Content-Security-Policy, access logging. The site loads fonts from Google at runtime, which a strict CSP would block. |
@@ -84,7 +84,7 @@ created, and none was changed.
 | # | Policy / used by | Permitted actions and resources | Wildcards | Unnecessary or to remove | Administrator must create |
 |---|---|---|---|---|---|
 | 1 | **API task role** (ECS task, design) | `s3:ListBucket` on the bucket, only for prefix `gold/eirgrid/daily_demand/*`; `s3:GetObject` on `.../gold/eirgrid/daily_demand/*`; DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN and `Query` on the `index/gsi1` ARN only. **Implemented as the CDK task role (Phase 9.2) without any `states:*`**; the design policy in `spec.py` still lists `states:StartExecution` and `DescribeExecution` for activation | Prefix `*` in S3 ARN and condition; `:*` on execution names. No action wildcards, no `*` resource. | `states:StartExecution` and `DescribeExecution` are unused while execution is disabled: attach them only at activation. `DeleteItem` is needed (lock release). | the role and policy, trusted by `ecs-tasks.amazonaws.com` |
-| 2 | **State machine role** (design) | DynamoDB `UpdateItem`, `DeleteItem` on the table; `lambda:InvokeFunction` on the four stage functions | none | none | the role; **plus logging permissions the spec omits** (CloudWatch Logs delivery) if execution logging is enabled; replace the Lambda statement if Fargate tasks are chosen (`ecs:RunTask`, `iam:PassRole`) |
+| 2 | **State machine role** (CDK, Phase 9.5) | DynamoDB `UpdateItem`, `DeleteItem` on the table; `lambda:InvokeFunction` on the four stage functions | none | none | the role; logging is not enabled, so no log-delivery permission (it would need `logs:*Delivery*` on `*`) |
 | 3 | **Pipeline stage role** (design) | `s3:GetObject` on `bronze/*`, `silver/*`; `s3:PutObject` on `bronze/*`, `silver/*`, `gold/*`; `s3:GetObject` on the Gold prefix; `glue:GetTable`, `glue:CreatePartition` on the catalog, one database and one table | `bronze/*`, `silver/*`, `gold/*` prefixes | The `ReadGoldForRegistration` statement is unnecessary: `register_gold_partition` calls Glue only. Remove it. | the role; Glue permissions are the ones the developer identity was denied |
 | 4 | **Site bucket policy** (CDK-generated) | Deny all S3 actions over non-TLS; allow `s3:GetObject` to `cloudfront.amazonaws.com` only when `aws:SourceArn` is the energy distribution | `Principal: "*"` appears only in the TLS **Deny**, which is standard and safe | none | created with the stack |
 | 5 | **ECS task execution role** | not defined | n/a | n/a | pull from the two ECR repositories; write to the API log group only |
@@ -112,9 +112,9 @@ created, and none was changed.
    pushed anywhere.
 3. ~~No ECS service, target group, ECR or task roles~~ **Resolved as CDK in Phase 9.1**
    (not deployed). The ALB now has an egress rule to the task port. DynamoDB permissions are now on the task role (Phase 9.2). Remaining: the pipeline repository and a first real deployment.
-4. ~~DynamoDB table not a CDK construct~~ **Resolved in Phase 9.2** (not deployed). **Step Functions is still not a CDK construct**; no state machine or stage compute exists.
+4. ~~DynamoDB table not a CDK construct~~ **Resolved in Phase 9.2** (not deployed). **Step Functions is now a CDK construct (Phase 9.5, not deployed)**; the stage compute exists as Lambda functions (Phase 9.4).
 5. **Pipeline compute not deployed** (Lambda container functions are defined in CDK; the image
-   must be published and the Glue permissions confirmed; the state machine is Phase 9.5).
+   must be published and the Glue permissions confirmed; the state machine is defined in Phase 9.5 but not deployed).
 6. **No Cognito pool or app client** and no groups.
 7. **No logging, retention or alarms.**
 8. **Administrator permissions are unconfirmed**, and the developer identity must not
@@ -179,6 +179,19 @@ role each. Verified only through unit tests, synthesised CloudFormation tests an
 build with invalid-input checks; **never deployed, published to ECR, invoked or tested against
 AWS**. The ECS API task role, the DynamoDB and S3 gateway endpoints and the 503 on
 `POST /api/runs` are unchanged and execution remains disabled. Remaining before execution:
-Phase 9.5 state machine, image publication (CDK bootstrap), Glue permission confirmation, first
+image publication (CDK bootstrap), Glue permission confirmation, first
 supervised run, and re-sizing memory and timeouts from measurements. See
 `docs/administrator-handover.md`.
+
+## Phase 9.5 update
+
+`IrishEnergyWorkflowStack` defines the Standard state machine, its own role (DynamoDB
+`UpdateItem`/`DeleteItem` on the table, `lambda:InvokeFunction` on the four stage functions) and
+the dormant API task role statements `states:StartExecution` (one state machine) and
+`states:DescribeExecution` (its executions). Verified only by unit tests, synthesised templates and a
+local simulation of the definition against the real handlers and a DynamoDB test double; **never
+deployed or executed**. One defect was found and fixed by the simulation (a dropped
+`"ResultPath": null` would have let DynamoDB responses overwrite the workflow state). Execution
+remains disabled: the settings guard, the 503 on `POST /api/runs` and the unwired executor are
+unchanged. Remaining: deployment and bootstrap, image publication, Glue and Step Functions
+permission confirmation, a supervised test run, logging and alarms, and the separate activation change.

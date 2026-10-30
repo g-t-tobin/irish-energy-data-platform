@@ -12,6 +12,15 @@ from src import run_history_schema as schema
 
 GOLD_PREFIX = "gold/eirgrid/daily_demand/"
 STAGES = ("bronze", "silver", "gold", "glue_registration")
+# Lambda service and invocation failures only. A function's own errors (StageInputError,
+# Sandbox.Timedout, ...) are permanent for this run and go straight to Catch.
+LAMBDA_TRANSIENT_ERRORS = [
+    "Lambda.ClientExecutionTimeoutException",
+    "Lambda.ServiceException",
+    "Lambda.AWSLambdaException",
+    "Lambda.SdkClientException",
+    "Lambda.TooManyRequestsException",
+]
 PROGRESS_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r)"
 TERMINAL_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r, :i)"
 _STATUS_VALUES = {":q": {"S": "queued"}, ":r": {"S": "running"}, ":i": {"S": "interrupted"}}
@@ -264,7 +273,7 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
             "TimeoutSeconds": 600,
             "Retry": [
                 {
-                    "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                    "ErrorEquals": list(LAMBDA_TRANSIENT_ERRORS),
                     "IntervalSeconds": 5,
                     "MaxAttempts": 2,
                     "BackoffRate": 2.0,

@@ -286,3 +286,14 @@ code (`src/pipeline_stages.py`). They share one image (`Dockerfile.lambda`) and 
 `docker build --platform linux/amd64 -f Dockerfile.lambda -t irish-energy-pipeline:local --load .`.
 Not deployed, not published and never invoked; the Step Functions state machine is the next phase
 and pipeline execution remains disabled. See `docs/administrator-handover.md`.
+
+## Step Functions workflow (Phase 9.5)
+
+A Standard state machine (`infrastructure/stacks/energy_workflow_stack.py`, built from
+`infrastructure/run_control/spec.py`) chains the four Lambda stages and records progress in the
+DynamoDB run history with native integrations. Input is `{"run_id", "days_back"}`; retries cover
+Lambda service errors only and every failure ends the execution as `FAILED`. The API task role gained
+dormant `states:StartExecution` and `states:DescribeExecution` permissions on this one state machine,
+and the container gets `PIPELINE_STATE_MACHINE_ARN`. Synthesised and tested locally only: not
+deployed and never executed. Pipeline execution remains disabled and `POST /api/runs` still returns
+503. See `docs/administrator-handover.md`.

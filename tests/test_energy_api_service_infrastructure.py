@@ -20,6 +20,7 @@ import aws_cdk as cdk  # noqa: E402
 from aws_cdk.assertions import Match, Template  # noqa: E402
 
 from energy_config import (  # noqa: E402
+    STATE_MACHINE_ARN,
     ApiServiceConfig,
     ConfigError,
     load_service_config,
@@ -250,6 +251,7 @@ def test_environment_is_explicit_and_contains_no_credentials_or_execution_switch
         "S3_BUCKET": "irish-energy-data-platform-851725545966",
         "RUN_HISTORY_BACKEND": "dynamodb",
         "RUN_HISTORY_REGION": "eu-west-1",
+        "PIPELINE_STATE_MACHINE_ARN": STATE_MACHINE_ARN,  # dormant: nothing reads it while execution is off
     }
     assert "RUN_HISTORY_DB_PATH" not in env  # no SQLite configuration in production
     assert "irish-energy-run-history" in json.dumps(env["RUN_HISTORY_TABLE"]) or "ImportValue" in json.dumps(
@@ -404,6 +406,18 @@ def test_application_role_has_exactly_the_gold_read_and_run_history_permissions(
             "Action": "dynamodb:Query",
             "Resource": {"Fn::Join": ["", [{"Fn::ImportValue": TABLE_ARN_IMPORT}, "/index/gsi1"]]},
         },
+        {
+            "Sid": "StartAndInspectOneStateMachine",
+            "Effect": "Allow",
+            "Action": "states:StartExecution",
+            "Resource": STATE_MACHINE_ARN,
+        },
+        {
+            "Sid": "ReconcileOwnExecutions",
+            "Effect": "Allow",
+            "Action": "states:DescribeExecution",
+            "Resource": STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:") + ":*",
+        },
     ]
 
 
@@ -413,7 +427,8 @@ def test_application_role_has_none_of_the_permissions_it_must_not_have(templates
     flat = json.dumps(statements).lower()
 
     for forbidden in (
-        "states:", "glue:", "athena:", "iam:", "cognito", "secretsmanager", "kms:", "s3:put", "s3:delete",
+        "states:*", "states:stop", "states:delete", "states:create", "states:update", "states:send",
+        "states:list", "states:start_sync", "lambda:", "glue:", "athena:", "iam:", "cognito", "secretsmanager", "kms:", "s3:put", "s3:delete",
         "dynamodb:scan", "dynamodb:batch", "dynamodb:createtable", "dynamodb:deletetable", "dynamodb:updatetable",
         "dynamodb:describe", "dynamodb:*", "dynamodb:transact",
     ):
@@ -492,7 +507,7 @@ def test_the_cdk_permissions_are_a_subset_of_the_phase_6_specification(templates
     cdk_actions = {a for s in policy_for(edge, "ApiServiceTaskRole") for a in as_list(s["Action"])}
 
     assert cdk_actions <= spec_actions
-    assert not any(a.startswith("states:") for a in cdk_actions)  # Step Functions only at activation
+    assert {a for a in cdk_actions if a.startswith("states:")} == {"states:StartExecution", "states:DescribeExecution"}
 
 
 def test_gold_prefix_matches_what_the_analytics_code_reads():

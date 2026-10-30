@@ -14,6 +14,7 @@ from energy_config import ACCOUNT, REGION, ConfigError, load_edge_config, load_s
 from stacks.data_lake_stack import DataLakeStack  # noqa: E402
 from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
 from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
+from stacks.energy_workflow_stack import EnergyWorkflowStack  # noqa: E402
 from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
 from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  # noqa: E402
 
@@ -57,9 +58,18 @@ run_history = EnergyRunHistoryStack(
 )
 
 # Pipeline stage Lambda functions: no certificates needed; not invoked by anything yet.
-EnergyPipelineStack(
+pipeline = EnergyPipelineStack(
     app,
     "IrishEnergyPipelineStack",
+    env=cdk.Environment(account=ACCOUNT, region=REGION),
+)
+
+# Standard workflow chaining the stage functions; nothing starts an execution.
+workflow = EnergyWorkflowStack(
+    app,
+    "IrishEnergyWorkflowStack",
+    table=run_history.table,
+    pipeline_stack=pipeline,
     env=cdk.Environment(account=ACCOUNT, region=REGION),
 )
 
@@ -71,7 +81,7 @@ else:
     edge_env = cdk.Environment(account=edge.account, region=edge.region)
     if service is None:
         print("Energy API service skipped: image tag and Cognito IDs not provided.")
-    EnergyApiEdgeStack(
+    api_edge = EnergyApiEdgeStack(
         app,
         "IrishEnergyApiEdgeStack",
         config=edge,
@@ -80,6 +90,8 @@ else:
         table=run_history.table if service else None,
         env=edge_env,
     )
+    if service:
+        api_edge.add_dependency(workflow)  # the task role names the state machine
     EnergyFrontendStack(app, "IrishEnergyFrontendStack", config=edge, env=edge_env)
 
 app.synth()

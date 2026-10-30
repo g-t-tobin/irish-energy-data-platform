@@ -80,6 +80,22 @@ class Settings:
     cognito: CognitoConfig | None = None
     rate_limits: RateLimits = RateLimits()
     run_history: RunHistorySettings = RunHistorySettings()
+    # Dormant: recorded for a later activation phase; nothing reads it today.
+    pipeline_state_machine_arn: str | None = None
+
+
+_STATE_MACHINE_ARN_RE = re.compile(
+    r"^arn:aws:states:[a-z]{2}(?:-[a-z]+)+-\d:\d{12}:stateMachine:[A-Za-z0-9_-]{1,80}$"
+)
+
+
+def _load_state_machine_arn(env: Mapping[str, str]) -> str | None:
+    arn = (env.get("PIPELINE_STATE_MACHINE_ARN") or "").strip()
+    if not arn:
+        return None
+    if not _STATE_MACHINE_ARN_RE.match(arn):
+        raise SettingsError("PIPELINE_STATE_MACHINE_ARN must be a Step Functions state machine ARN.")
+    return arn
 
 
 def _parse_limit(env: Mapping[str, str], name: str, default: int) -> int:
@@ -207,4 +223,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         cognito=cognito,
         rate_limits=_load_rate_limits(env),
         run_history=run_history,
+        pipeline_state_machine_arn=_load_state_machine_arn(env),
     )

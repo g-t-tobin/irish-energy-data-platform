@@ -166,7 +166,7 @@ def test_the_endpoint_policy_matches_the_task_role_and_does_not_replace_it(edge)
     assert role["RunHistoryListIndex"]["Resource"] == mine["RunHistoryListIndexQuery"]["Resource"]
 
 
-def test_the_ecs_task_role_permissions_are_unchanged(edge):
+def test_the_ecs_task_role_run_history_and_gold_permissions_are_unchanged(edge):
     statements = policy_for(edge, "ApiServiceTaskRole")
 
     assert [s["Sid"] for s in statements] == [
@@ -174,6 +174,8 @@ def test_the_ecs_task_role_permissions_are_unchanged(edge):
         "ReadGoldObjectsOnly",
         "RunHistoryItems",
         "RunHistoryListIndex",
+        "StartAndInspectOneStateMachine",  # Phase 9.5, dormant
+        "ReconcileOwnExecutions",
     ]
     assert statements[2]["Action"] == ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
     assert statements[3]["Action"] == "dynamodb:Query"

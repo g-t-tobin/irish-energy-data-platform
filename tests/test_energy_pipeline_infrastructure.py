@@ -254,13 +254,11 @@ def test_no_step_functions_resources_or_invocation_wiring(template):
     assert "EventSourceMapping" not in text and "AWS::Events" not in text
 
 
-def test_ecs_api_role_gains_nothing_and_has_no_pipeline_permissions():
+def test_ecs_api_role_has_no_lambda_or_wildcard_states_permission():
     edge = synth()[1]
-    sids = [s["Sid"] for s in policy_for(edge, "ApiServiceTaskRole")]
+    text = json.dumps(policy_for(edge, "ApiServiceTaskRole"))
 
-    assert sids == ["ListGoldPrefixOnly", "ReadGoldObjectsOnly", "RunHistoryItems", "RunHistoryListIndex"]
-    text = json.dumps(edge.to_json())
-    assert "lambda:" not in text and "states:" not in text and "irish-energy-pipeline" not in text
+    assert "lambda:" not in text and "states:*" not in text and "irish-energy-pipeline-" not in text
 
 
 def test_api_execution_stays_disabled_and_operator_post_is_503(auth_app, tmp_path, monkeypatch):

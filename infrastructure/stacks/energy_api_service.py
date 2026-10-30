@@ -16,7 +16,15 @@ from aws_cdk import aws_logs as logs
 from aws_cdk import aws_secretsmanager as secretsmanager
 from constructs import Construct
 
-from energy_config import ACCOUNT, CONTAINER_USER, GOLD_PREFIX, REGION, ApiServiceConfig
+from energy_config import (
+    ACCOUNT,
+    CONTAINER_USER,
+    GOLD_PREFIX,
+    REGION,
+    STATE_MACHINE_ARN,
+    STATE_MACHINE_EXECUTION_ARN_PATTERN,
+    ApiServiceConfig,
+)
 from src import run_history_schema as schema
 
 _RETENTION = {
@@ -107,6 +115,23 @@ class ApiService(Construct):
             )
         )
 
+        # Dormant: nothing calls the executor while execution is disabled (src/settings.py).
+        # Exactly one state machine and its executions; never states:*.
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="StartAndInspectOneStateMachine",
+                actions=["states:StartExecution"],
+                resources=[STATE_MACHINE_ARN],
+            )
+        )
+        task_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="ReconcileOwnExecutions",
+                actions=["states:DescribeExecution"],
+                resources=[STATE_MACHINE_EXECUTION_ARN_PATTERN],
+            )
+        )
+
         log_group = logs.LogGroup(
             self,
             "LogGroup",
@@ -145,6 +170,7 @@ class ApiService(Construct):
             "RUN_HISTORY_BACKEND": "dynamodb",
             "RUN_HISTORY_TABLE": table.table_name,
             "RUN_HISTORY_REGION": REGION,
+            "PIPELINE_STATE_MACHINE_ARN": STATE_MACHINE_ARN,
             # Trust X-Forwarded-For only from the ALB's network, never from clients.
             "FORWARDED_ALLOW_IPS": vpc.vpc_cidr_block,
         }

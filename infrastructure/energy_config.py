@@ -68,6 +68,12 @@ PIPELINE_STAGES = (
     PipelineStage("glue_registration", "src.pipeline_stages.glue_handler", 60, 512),
 )
 
+# Step Functions workflow (Phase 9.5). The ARN is derived, not looked up: names are fixed.
+STATE_MACHINE_NAME = "irish-energy-pipeline"
+STATE_MACHINE_ARN = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:{STATE_MACHINE_NAME}"
+STATE_MACHINE_EXECUTION_ARN_PATTERN = f"arn:aws:states:{REGION}:{ACCOUNT}:execution:{STATE_MACHINE_NAME}:*"
+PIPELINE_FUNCTION_EXPORT = "IrishEnergyPipeline-{label}FunctionArn"  # exported by the pipeline stack
+
 _IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _POOL_RE = re.compile(r"^(?P<region>[a-z]{2}(?:-[a-z]+)+-\d)_[A-Za-z0-9]+$")
 _CLIENT_RE = re.compile(r"^[A-Za-z0-9]{10,128}$")

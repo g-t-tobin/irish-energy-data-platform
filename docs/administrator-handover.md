@@ -48,7 +48,7 @@ or administrator work. Name all new resources with an `irish-energy` prefix.
 | ECS cluster, Fargate task definition and service for the API, log group (30 days), execution and task roles | CDK exists (`IrishEnergyApiEdgeStack`) |
 | ECR repository for a pipeline image | to write (depends on the pipeline compute decision) |
 | DynamoDB run-history table `irish-energy-run-history` (keys `pk`/`sk`, index `gsi1`, TTL on `expires_at`, AWS-managed-key encryption, point-in-time recovery, deletion protection, retained) | CDK exists (`IrishEnergyRunHistoryStack`, always synthesized, no certificates needed; built from `infrastructure/run_control/spec.py`) |
-| Step Functions state machine, execution log group | spec only |
+| Step Functions Standard state machine `irish-energy-pipeline` and its role (`IrishEnergyWorkflowStack`) | CDK exists (Phase 9.5; not deployed, never executed); no execution log group (see Phase 9.5 section) |
 | Pipeline stage compute: four Lambda container functions, shared image, one role each (`IrishEnergyPipelineStack`) | CDK exists (Phase 9.4; not deployed, image not published, never invoked) |
 | CloudWatch log groups with retention, alarms, AWS Budget | to write |
 | Cognito user pool, public app client (no secret), Hosted UI domain, groups `viewer` and `operator` | manual or new CDK |
@@ -70,7 +70,7 @@ audit table is in the readiness review (section 5). Summary:
 |---|---|---|
 | API task role (CDK, this phase) | `ecs-tasks.amazonaws.com` (account-conditioned) | `s3:ListBucket` on the bucket for prefix `gold/eirgrid/daily_demand/*` and `s3:GetObject` on that prefix, plus, on the run-history table only: `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN and `dynamodb:Query` on the `gsi1` index ARN (exactly what `src/dynamodb_run_store.py` calls; `PutItem` also covers its write transaction). No Scan, Batch, table-management, KMS, Step Functions, Glue, Athena, IAM or Cognito permissions. `states:*` is attached only at activation |
 | ECS task execution role (CDK) | `ecs-tasks.amazonaws.com` (account-conditioned) | pull from the one API repository (`ecr:BatchCheckLayerAvailability`, `GetDownloadUrlForLayer`, `BatchGetImage`), `ecr:GetAuthorizationToken` (resource `*` is unavoidable for this action), `logs:CreateLogStream` and `PutLogEvents` on the one log group; `secretsmanager:GetSecretValue` on exact ARNs only if secrets are ever configured |
-| State machine role | `states.amazonaws.com` | `UpdateItem`, `DeleteItem` on the table; invoke the stage functions (or `ecs:RunTask` and `iam:PassRole` if Fargate); log delivery |
+| State machine role (CDK, Phase 9.5) | `states.amazonaws.com` (account-conditioned) | `dynamodb:UpdateItem`, `DeleteItem` on the run-history table; `lambda:InvokeFunction` on the four stage function ARNs; nothing else (no log delivery) |
 | Pipeline stage roles (four, CDK, Phase 9.4) | `lambda.amazonaws.com` (account-conditioned) | one role per stage, see "Pipeline stage Lambda functions (Phase 9.4)" |
 | Frontend deployer | an administrator or CI | site bucket upload/delete/list; `cloudfront:CreateInvalidation` on one distribution |
 
@@ -142,7 +142,7 @@ Each step depends on those before it. Stop at any failed check.
 | 2 | Issue both ACM certificates and add DNS validation records | step 1, hosted zone access | the ALB and CloudFront stacks need issued ARNs |
 | 3 | Deploy `IrishEnergyApiRegistryStack` (the repository only), then build, scan and push the API image with an explicit version tag | step 1 | the ECS service needs an image; tags are immutable so every release needs a new tag |
 | 4 | Deploy `IrishEnergyRunHistoryStack` (the table, built from `spec.table_definition`) | step 1 | the ECS service stack imports its name and ARN, so it must exist first; the state machine will need it too |
-| 5 | Create the state machine, stage compute and roles (execution still disabled; do not attach `states:StartExecution` to the API role yet) | steps 3, 4 | defined early so activation later is a configuration step, but unused until step 12 |
+| 5 | Deploy `IrishEnergyPipelineStack` then `IrishEnergyWorkflowStack` (execution still disabled; the API role carries the dormant `states:` statements described in the Phase 9.5 section) | steps 3, 4 | defined early so activation later is a configuration step, but unused until step 12 |
 | 6 | Deploy the ECS API service and ALB target group with the health check on `/health` | steps 2, 3, 4 | the ALB must forward `energy-api.` to a healthy service |
 | 7 | Cognito: pool, public app client, Hosted UI domain, groups, test users, callback URLs for the energy origin | step 1 | the API (step 6 env) and frontend build need its IDs; can be done in parallel with 6 but must finish before 8 and 11 |
 | 8 | Build the frontend with the IDs; deploy `IrishEnergyFrontendStack`; upload and invalidate | steps 2, 6, 7 | needs the us-east-1 certificate and the API hostname |
@@ -382,7 +382,7 @@ Do not widen the developer profile; use an administrator identity for deployment
 
 **Decision.** The owner confirmed AWS Lambda container images for the pipeline stages (resolving
 the Lambda-versus-Fargate conflict in the ADR). Step Functions Standard will chain them in
-Phase 9.5; no state machine exists yet. Defined in CDK (`infrastructure/stacks/energy_pipeline_stack.py`,
+Phase 9.5 (see the next section). Defined in CDK (`infrastructure/stacks/energy_pipeline_stack.py`,
 stack `IrishEnergyPipelineStack`, always synthesized, no certificates needed). **Not deployed, the
 image is not published, no function has ever been invoked, and nothing was verified against AWS.**
 The ECS Fargate service remains the FastAPI API only and is unchanged.
@@ -459,8 +459,8 @@ is what lets Lambda pull the image; confirm this on a bootstrapped account.
 
 **Outputs for Phase 9.5** (CloudFormation exports from `IrishEnergyPipelineStack`):
 `IrishEnergyPipeline-BronzeFunctionArn`, `...-SilverFunctionArn`, `...-GoldFunctionArn`,
-`...-GlueRegistrationFunctionArn`. The state machine role will need `lambda:InvokeFunction` on those
-four ARNs and DynamoDB `UpdateItem`/`DeleteItem` on the run table (spec.py).
+`...-GlueRegistrationFunctionArn`. The Phase 9.5 state machine role imports them and holds
+`lambda:InvokeFunction` on those four ARNs plus DynamoDB `UpdateItem`/`DeleteItem` on the run table.
 
 **Deployment prerequisites.** Administrator confirmation that the deployer may create Lambda
 functions, IAM roles and log groups and publish the image asset; `glue:GetTable` and
@@ -468,4 +468,91 @@ functions, IAM roles and log groups and publish the image asset; `glue:GetTable`
 work); the `irish_energy_analytics` database and `daily_electricity_demand` table must exist
 (`DataLakeStack`); Lambda limits: 15 minutes per invocation, so a stage that outgrows the sizes
 above must be redesigned, not given a longer timeout. Pipeline execution remains disabled; the API
-role has no Lambda or Step Functions permission; Phase 9.5 adds the state machine and any activation.
+the stage roles have no Step Functions permission; the state machine (Phase 9.5) is described below.
+
+## Step Functions workflow (Phase 9.5)
+
+Defined in CDK (`infrastructure/stacks/energy_workflow_stack.py`, stack `IrishEnergyWorkflowStack`,
+always synthesized, needs no certificates). **Only synthesised and tested locally: not deployed,
+never executed, nothing verified against AWS.** Deploy order: run-history, pipeline, workflow, then
+the API edge stack, which depends on the workflow stack.
+
+**Architecture.** One **Standard** state machine `irish-energy-pipeline`, generated by
+`infrastructure/run_control/spec.py` (`build_state_machine_definition`) so the Phase 6 design and
+its tests stay the single source. The four existing Lambda functions are imported through the
+Phase 9.4 exports (`IrishEnergyPipeline-<Stage>FunctionArn`); none is duplicated. Logging, tracing and
+encryption settings are not enabled, so there is no CloudWatch Logs delivery and no wildcard
+resource; the Standard execution history (kept by Step Functions for 90 days) and the run record are
+the audit trail. Add log delivery later if wanted (it needs `logs:*Delivery*` actions on `*`).
+
+**Execution input** (unchanged from Phase 6; `StepFunctionsExecutor` starts the execution named after
+the run ID, so a repeated start is a no-op): `{"run_id": "<uuid>", "days_back": 1-30}`.
+
+**Order and data flow.** `MarkRunning` (DynamoDB) then `Bronze`, `Record_bronze`, `Silver`,
+`Record_silver`, `Gold`, `Record_gold`, `GlueRegistration`, `MarkSucceeded`, `ReleaseLockOnSuccess`,
+`Succeeded`. Every stage uses the optimised `arn:aws:states:::lambda:invoke` with `Payload.$ = "$"`
+(the whole state), `ResultSelector {"output.$": "$.Payload"}` (drops the Lambda response metadata)
+and `ResultPath $.<stage>`; the handlers therefore read `bronze.output.key`, `silver.output.key` and
+`gold.output.key`, and `run_id` and `days_back` stay in the state to the end. The DynamoDB tasks set
+`ResultPath: null`, which matters: without it the DynamoDB response would replace the state
+(found while testing; the CDK/jsii layer drops `None`, so the definition is serialised with
+`json.dumps`). `tests/test_energy_workflow_infrastructure.py` runs the synthesised definition
+against the real handlers and the DynamoDB test double to check these paths.
+
+**Retry and failure.** Each Lambda task has a timeout (600 s, above the function timeouts) and
+retries only Lambda service and invocation errors (`Lambda.ClientExecutionTimeoutException`,
+`ServiceException`, `AWSLambdaException`, `SdkClientException`, `TooManyRequestsException`): at most
+2 retries, 5 s then 10 s. Function errors such as `StageInputError`, `StageConfigurationError`, an
+EirGrid HTTP error or a function timeout are **not** retried: they go to `Catch`, which records the
+failure and ends the execution as `FAILED` (`Error: PipelineFailed`; the original error is kept in
+the failing state's history events). A failure in Bronze, Silver or Gold marks the run `failed`; a
+failure in Glue registration, or in recording the Gold key, marks it `partial_failure` (Gold exists).
+Each failure releases the lock and the run record carries only the fixed text "A pipeline stage
+failed." with `error_code` `INTERNAL_ERROR`; the stage that failed stays in `stage`. A missed lock
+release is deliberately ignored (the lease expires) but cannot turn a failure into a success.
+**Duplicate outputs:** a retry re-runs the stage, and Bronze and Silver object names are timestamped
+and Gold is named by run date, so a retry after a lost response can leave an extra Bronze or Silver object (or overwrite
+the same-day Gold object); none of these stages is idempotent beyond Glue registration, which
+tolerates an existing partition. EirGrid transient failures are not retried automatically.
+
+**DynamoDB progress** (native `dynamodb:updateItem` / `deleteItem`, no extra Lambda). Keys are those
+of the store: run item `pk = RUN#<run_id>`, `sk = RUN`; lock item `pk = LOCK#pipeline`, `sk = LOCK`.
+The workflow only `SET`s `status`, `stage`, `started_at`, `bronze_key`, `silver_key`, `gold_key`,
+`error`, `error_code`, `finished_at` and `updated_at`, using the same guards as
+`DynamoRunStore.update_run` (progress only while `queued` or `running`; a terminal status also over
+`interrupted`). It never writes identity, `days_back`, `created_at`, `requested_by`, the listing index
+keys, TTL or `lease_expires_at`, and never uses `PutItem`. Status values are `running`, `succeeded`,
+`failed` and `partial_failure`; stages are `bronze`, `silver`, `gold`, `glue_registration` and
+`completed`. The lock is released with a delete conditioned on `run_id = :rid`. Difference from the
+store: the store's progress updates also extend the lock lease (heartbeat); the workflow does not.
+This is safe because the whole execution is limited to 30 minutes and the lease is 45 minutes from
+`create_run`; if the workflow timeout is ever raised past the lease, add a lease update. Workflow
+timestamps are `$$.State.EnteredTime` (`...Z`), the store's are `+00:00`; both are ISO 8601 UTC.
+
+**State machine role** (separate from the four Lambda roles; trusted by `states.amazonaws.com` for
+this account only; no managed policies): `dynamodb:UpdateItem` and `dynamodb:DeleteItem` on the
+run-history table ARN (not the index), and `lambda:InvokeFunction` on the four unqualified function
+ARNs (an unqualified function ARN needs no `:*`, per the AWS documentation; versions and aliases are
+not used). No S3, Glue, Athena, IAM, Cognito, EC2, KMS or logging permissions and no wildcard
+resources.
+
+**API task role.** Two statements were added, dormant while execution is disabled:
+`StartAndInspectOneStateMachine` (`states:StartExecution` on the exact state machine ARN
+`arn:aws:states:eu-west-1:851725545966:stateMachine:irish-energy-pipeline`) and
+`ReconcileOwnExecutions` (`states:DescribeExecution` on `...:execution:irish-energy-pipeline:*`). The
+Gold read and run-history permissions are unchanged, and there is no `states:*` or Lambda permission.
+The container gets `PIPELINE_STATE_MACHINE_ARN` (validated at startup; no code reads it yet). The
+ARN is derived from the fixed name in `infrastructure/energy_config.py`, not looked up. The ECS tasks
+reach Step Functions over the internet path they already use for AWS APIs (no VPC endpoint was added).
+
+**Execution stays disabled.** `PIPELINE_EXECUTION_ENABLED` is still refused by `load_settings`, the API
+never constructs `StepFunctionsExecutor`, `POST /api/runs` still returns 503
+`{"detail": "Pipeline execution is disabled."}` for an authenticated operator, and tests, application
+start-up and CDK synthesis create no AWS client and start no execution.
+
+**Before execution can be enabled:** deploy and bootstrap (see the Phase 9.4 prerequisites), publish
+the Lambda image, confirm the Glue and Step Functions permissions with the administrator, run the
+workflow once by hand with a test input after review, decide on execution logging and alarms, then a
+separate reviewed change: lift the settings guard, construct the executor from
+`PIPELINE_STATE_MACHINE_ARN`, wire the reconciler and re-test. Nothing in this document claims any of
+that has happened.
