@@ -1,0 +1,9 @@
+# Allow-list: nothing enters the build context except what the image needs.
+*
+!requirements-api.txt
+!src/
+# Even inside src/, never ship caches, databases or env files.
+**/__pycache__
+**/*.pyc
+**/*.sqlite3*
+**/.env*
