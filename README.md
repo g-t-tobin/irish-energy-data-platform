@@ -297,3 +297,12 @@ dormant `states:StartExecution` and `states:DescribeExecution` permissions on th
 and the container gets `PIPELINE_STATE_MACHINE_ARN`. Synthesised and tested locally only: not
 deployed and never executed. Pipeline execution remains disabled and `POST /api/runs` still returns
 503. See `docs/administrator-handover.md`.
+
+## Pipeline integration and reliability tests (Phase 9.6)
+
+`tests/pipeline_harness.py` runs the real stage handlers, the synthesised state machine (via a small local interpreter),
+the DynamoDB run store and the Step Functions executor against local doubles, with no AWS access. Bronze and Silver
+objects now carry the run ID in their names, transient EirGrid errors are retried with bounded backoff, and
+the failure, retry, lock, reconciliation and security scenarios are covered by tests. This is local simulation only:
+nothing has been deployed or run against AWS and pipeline execution remains disabled. See
+`docs/administrator-handover.md` for contracts, findings and known limitations.

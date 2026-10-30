@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 import boto3
 import pandas as pd
 
+from src.run_history_schema import RUN_ID_PATTERN
+
 REQUIRED_COLUMNS = {"EffectiveTime", "FieldName", "Region", "Value"}
 
 
@@ -82,16 +84,19 @@ def transform_demand_payload(payload: dict) -> pd.DataFrame:
     return df
 
 
-def save_silver_to_s3(df: pd.DataFrame, bucket: str) -> str:
-    """Write the transformed DataFrame to S3 as compressed Parquet."""
+def save_silver_to_s3(df: pd.DataFrame, bucket: str, run_id: str | None = None) -> str:
+    """Write the transformed DataFrame to S3 as compressed Parquet (run-specific name if given)."""
     if not bucket:
         raise ValueError("An S3 bucket name is required")
+    if run_id is not None and not RUN_ID_PATTERN.match(run_id):
+        raise ValueError("run_id must be a UUID")
 
     now = datetime.now(timezone.utc)
+    name = run_id or f"{now:%Y%m%dT%H%M%SZ}"
     key = (
         "silver/eirgrid/demand_actual/"
         f"ingestion_date={now:%Y-%m-%d}/"
-        f"demand_actual_{now:%Y%m%dT%H%M%SZ}.parquet"
+        f"demand_actual_{name}.parquet"
     )
 
     buffer = io.BytesIO()
@@ -112,12 +117,14 @@ def save_silver_to_s3(df: pd.DataFrame, bucket: str) -> str:
     return key
 
 
-def process_bronze_object(bucket: str, bronze_key: str) -> str:
+def process_bronze_object(bucket: str, bronze_key: str, run_id: str | None = None) -> str:
     """Transform a specific Bronze JSON object and save Silver Parquet."""
     if not bucket:
         raise ValueError("An S3 bucket name is required")
     if not bronze_key:
         raise ValueError("A Bronze object key is required")
+    if run_id is not None and not RUN_ID_PATTERN.match(run_id):
+        raise ValueError("run_id must be a UUID")
 
     s3 = boto3.client("s3")
     response = s3.get_object(Bucket=bucket, Key=bronze_key)
@@ -125,7 +132,7 @@ def process_bronze_object(bucket: str, bronze_key: str) -> str:
 
     df = transform_demand_payload(payload)
     excluded = df.attrs["excluded_missing_demand"]
-    silver_key = save_silver_to_s3(df, bucket)
+    silver_key = save_silver_to_s3(df, bucket, run_id)
 
     print(f"Bronze object: {bronze_key}")
     print(f"Silver records written: {len(df)}")

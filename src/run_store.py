@@ -124,7 +124,8 @@ def utc_now() -> str:
 
 def safe_error_message(exc: BaseException) -> str:
     """Short, redacted description of an exception; never a traceback."""
-    code = getattr(exc, "response", {}).get("Error", {}).get("Code")
+    response = getattr(exc, "response", None)  # requests errors carry a Response or None, not a dict
+    code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
     if code:
         return f"{type(exc).__name__} ({code})"
     text = f"{type(exc).__name__}: {exc}"
@@ -166,6 +167,9 @@ def classify_error(exc: BaseException) -> str:
     response = getattr(exc, "response", None)
     code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
     module = type(exc).__module__
+    declared = getattr(exc, "error_code", None)
+    if declared in PUBLIC_ERROR_MESSAGES:
+        return declared
     if code in _ACCESS_DENIED_CODES or isinstance(exc, PermissionError):
         return "ACCESS_DENIED"
     if code or module.startswith(("botocore", "requests", "urllib3")):

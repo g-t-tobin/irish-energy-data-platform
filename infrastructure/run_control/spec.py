@@ -21,6 +21,9 @@ LAMBDA_TRANSIENT_ERRORS = [
     "Lambda.SdkClientException",
     "Lambda.TooManyRequestsException",
 ]
+# Raised by src/ingestion/eirgrid.py (timeouts, connection errors, HTTP 429/500/502/503/504); only
+# the ingestion stage can raise it. Retried 3 times at 10 s, 20 s and 40 s, then handled as a failure.
+TRANSIENT_SOURCE_ERRORS = ["TransientEirGridError"]
 PROGRESS_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r)"
 TERMINAL_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r, :i)"
 _STATUS_VALUES = {":q": {"S": "queued"}, ":r": {"S": "running"}, ":i": {"S": "interrupted"}}
@@ -277,7 +280,19 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
                     "IntervalSeconds": 5,
                     "MaxAttempts": 2,
                     "BackoffRate": 2.0,
-                }
+                },
+                *(
+                    [
+                        {
+                            "ErrorEquals": list(TRANSIENT_SOURCE_ERRORS),
+                            "IntervalSeconds": 10,
+                            "MaxAttempts": 3,
+                            "BackoffRate": 2.0,
+                        }
+                    ]
+                    if stage == "bronze"
+                    else []
+                ),
             ],
             "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": failure}],
             "Next": task_next,

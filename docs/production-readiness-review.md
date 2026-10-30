@@ -195,3 +195,18 @@ deployed or executed**. One defect was found and fixed by the simulation (a drop
 remains disabled: the settings guard, the 503 on `POST /api/runs` and the unwired executor are
 unchanged. Remaining: deployment and bootstrap, image publication, Glue and Step Functions
 permission confirmation, a supervised test run, logging and alarms, and the separate activation change.
+
+## Phase 9.6 update
+
+The whole pipeline was exercised locally (about 190 new tests): real handlers and processing code against file-backed
+S3, Glue and DynamoDB doubles, the synthesised state machine run by a local interpreter, the real run store and
+executor against a Step Functions client double. **No AWS call, deployment or execution took place; real-AWS
+behaviour remains unverified.** Changes: Bronze and Silver objects now have run-specific names (retries rewrite
+them; concurrent runs cannot collide), transient EirGrid failures are retried 3 times with exponential backoff in
+the ingestion state only, and `safe_error_message` no longer crashes on `requests` errors. Open items found and
+documented, not changed: Gold keeps one canonical object per run date and the latest successful run for a date replaces it (agreed policy, see the handover document); a failed lock release after success blocks new runs for up to 45 minutes; a `States.Runtime`
+failure leaves the run active until the unscheduled reconciler runs; partial failures can lack a `gold_key`; no
+cleanup of orphaned Bronze and Silver objects. Security checks over the real synthesised templates found no
+change: Lambda roles separate, the state machine role limited to the four stages and the table, the API role
+limited to one state machine, no Scan, Batch or table-management permissions, no wildcard resources except the ECR
+token, execution disabled.

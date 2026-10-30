@@ -401,9 +401,7 @@ event, i.e. `run_id` (UUID), `days_back` (1-30, ingestion only) and the previous
 `bronze.output.key`, `silver.output.key` or `gold.output.key`. Keys are validated against the layer
 prefix before use, errors are never caught (`StageInputError`, `StageConfigurationError` or the
 underlying error fail the invocation), and the DynamoDB run history is written by the state
-machine (Phase 6), not by these functions. Silver and Gold write timestamped keys, so a Step
-Functions retry of a succeeded-but-timed-out stage can leave an extra object; Glue registration is
-idempotent (`AlreadyExistsException` returns `partition_created: false`).
+machine (Phase 6), not by these functions. Phase 9.6 made Bronze and Silver names run-specific, so a retry rewrites the same object; Glue registration is idempotent (`AlreadyExistsException` returns `partition_created: false`).
 
 **Image.** One shared image (`Dockerfile.lambda`, base `public.ecr.aws/lambda/python:3.13`, x86_64)
 holds `src/` plus pandas, pyarrow and requests (`requirements-lambda.txt`); boto3 comes from the
@@ -503,17 +501,14 @@ against the real handlers and the DynamoDB test double to check these paths.
 retries only Lambda service and invocation errors (`Lambda.ClientExecutionTimeoutException`,
 `ServiceException`, `AWSLambdaException`, `SdkClientException`, `TooManyRequestsException`): at most
 2 retries, 5 s then 10 s. Function errors such as `StageInputError`, `StageConfigurationError`, an
-EirGrid HTTP error or a function timeout are **not** retried: they go to `Catch`, which records the
+permanent EirGrid HTTP error (4xx other than 429) or a function timeout are **not** retried (Phase 9.6 retries transient EirGrid errors in ingestion only): they go to `Catch`, which records the
 failure and ends the execution as `FAILED` (`Error: PipelineFailed`; the original error is kept in
 the failing state's history events). A failure in Bronze, Silver or Gold marks the run `failed`; a
 failure in Glue registration, or in recording the Gold key, marks it `partial_failure` (Gold exists).
 Each failure releases the lock and the run record carries only the fixed text "A pipeline stage
 failed." with `error_code` `INTERNAL_ERROR`; the stage that failed stays in `stage`. A missed lock
 release is deliberately ignored (the lease expires) but cannot turn a failure into a success.
-**Duplicate outputs:** a retry re-runs the stage, and Bronze and Silver object names are timestamped
-and Gold is named by run date, so a retry after a lost response can leave an extra Bronze or Silver object (or overwrite
-the same-day Gold object); none of these stages is idempotent beyond Glue registration, which
-tolerates an existing partition. EirGrid transient failures are not retried automatically.
+**Duplicate outputs and ingestion retries:** superseded by Phase 9.6 (run-specific Bronze and Silver names, retry of transient EirGrid errors); see "Pipeline contracts and local integration testing (Phase 9.6)".
 
 **DynamoDB progress** (native `dynamodb:updateItem` / `deleteItem`, no extra Lambda). Keys are those
 of the store: run item `pk = RUN#<run_id>`, `sk = RUN`; lock item `pk = LOCK#pipeline`, `sk = LOCK`.
@@ -556,3 +551,83 @@ workflow once by hand with a test input after review, decide on execution loggin
 separate reviewed change: lift the settings guard, construct the executor from
 `PIPELINE_STATE_MACHINE_ARN`, wire the reconciler and re-test. Nothing in this document claims any of
 that has happened.
+
+## Pipeline contracts and local integration testing (Phase 9.6)
+
+**Everything in this section was verified with local doubles only (files for S3, in-memory Glue and
+DynamoDB, a Step Functions client double and a local interpreter of the synthesised state machine).
+Nothing was deployed or run against AWS, and none of this replaces a supervised first run in AWS.**
+
+### Contracts (as found, unchanged except where stated)
+
+| Item | Contract |
+|---|---|
+| Execution input | `{"run_id": "<lowercase UUID>", "days_back": 1-30}`; the execution name is the run ID |
+| Stage input | the whole workflow state: `run_id`, `days_back` and each earlier result as `<stage>.output` |
+| Stage output | `bronze`: `{"key", "records"}`; `silver`, `gold`: `{"key"}`; `glue_registration`: `{"key", "partition_created"}` |
+| Run record | `pk RUN#<run_id>`, `sk RUN`; `run_id`, `status`, `stage`, `days_back`, `created_at`, `updated_at`, `requested_by`, `gsi1pk`, `gsi1sk`, plus `started_at`, `finished_at`, `bronze_key`, `silver_key`, `gold_key`, `error`, `error_code` as the run progresses |
+| Lock | `pk LOCK#pipeline`, `sk LOCK`, `run_id`, `lease_expires_at`; taken with the run in one transaction; renewed by each progress update made through the store (not by the workflow); released by a terminal update or a delete conditioned on the owning `run_id`; a lease older than 45 minutes can be taken over |
+| Statuses | active `queued`, `running`; terminal `succeeded`, `failed`, `partial_failure`, `interrupted` |
+| Error codes | `ACCESS_DENIED`, `UPSTREAM_UNAVAILABLE`, `VALIDATION_FAILED`, `STORAGE_ERROR`, `INTERRUPTED`, `INTERNAL_ERROR`; the workflow always writes `INTERNAL_ERROR` with fixed text |
+| Executor | `StepFunctionsExecutor.start` records the run, then starts one execution; a start failure fails the run and frees the lock; `reconcile_active_runs` settles runs still active from `DescribeExecution` (not scheduled or wired) |
+
+### What changed in this phase
+
+1. **Run-specific Bronze and Silver names.** `bronze/.../ingestion_date=<date>/demand_actual_<run_id>.json`
+   and the same for Silver `.parquet` (the partition layout and prefixes are unchanged; the stage
+   handlers pass the run ID; calls without a run ID keep the timestamped names, which is what the
+   standalone commands and the API's local executor still use). IAM is unchanged because the
+   prefixes are the same.
+2. **Transient EirGrid errors are retried.** `TransientEirGridError` (timeouts, connection errors and HTTP
+   429, 500, 502, 503, 504) is raised by `src/ingestion/eirgrid.py`; the ingestion state retries it by name
+   3 times at 10 s, 20 s and 40 s, separately from the Lambda service-error retries (2 retries, 5 s and 10 s).
+   Everything else is permanent and is never retried: other HTTP 4xx, TLS errors, invalid input, bad or
+   unexpected response bodies. Worst-case ingestion is about 190 s of the 1800 s workflow limit.
+3. **Defect fixed:** `safe_error_message` raised `AttributeError` for any `requests` exception (their
+   `response` is not a dict), which would have stopped the API's local executor recording the failure.
+
+### Data integrity findings
+
+| Question | Finding |
+|---|---|
+| Does a retry duplicate Bronze or Silver? | Before: yes (timestamped names). Now: no, the retry rewrites the run's own object (a retry that crosses 00:00 UTC lands in the next date partition and leaves the first object behind) |
+| Does a retry duplicate Gold? | No. Gold is one object per run date (`daily_demand.parquet`) and the same Silver gives identical content |
+| Can a retry make the next stage read the wrong object? | No. Each stage reads the exact key in the state; no stage looks up "the latest" object |
+| Can a failed run leave partial data? | Not partial objects (S3 puts are atomic), but completed earlier layers stay: a Gold failure leaves Bronze and Silver. Nothing cleans them up |
+| Can concurrent runs interfere? | Not in Bronze and Silver (run-specific names, tested with 8 threads). The run lock allows one active run anyway |
+| Do two runs on the same day overwrite each other's Gold? | **Yes, by agreed policy.** Gold keeps one canonical object per run date, `gold/eirgrid/daily_demand/run_date=YYYY-MM-DD/daily_demand.parquet`; the latest successful run for a date replaces the previous Gold dataset. The Glue partition layout and the analytics reader are unchanged, and per-run Gold history is not kept (Bronze and Silver keep run-specific objects) |
+
+### Test architecture
+
+`tests/pipeline_harness.py` wires the real handlers, processing code, DynamoDB store, executor and the
+CDK-synthesised definition to doubles: `LocalDirS3` (files under a temporary directory), a recording Glue
+double, `FakeDynamoDB`, a scripted `requests.get` returning real `Response` objects and
+`LocalStepFunctions` (runs the workflow in-process, immediately or when told). `tests/asl_simulator.py`
+interprets only the states this definition uses; it does not model time, `TimeoutSeconds`, payload size limits or
+redrive, never sleeps (delays are recorded), and treats an unresolvable path as `States.Runtime`, which
+`States.ALL` does not catch (per the AWS documentation). Test modules: `test_pipeline_integration`,
+`test_pipeline_idempotency`, `test_eirgrid_retry_classification`, `test_step_functions_failure_simulation`,
+`test_run_history_reliability`, `test_executor_integration`, `test_pipeline_security_regression`.
+
+### Known limitations (not changed; no safe fix inside the existing contracts)
+
+- A successful workflow whose final lock release fails leaves the finished run holding the lock; new runs are
+  refused with "already active" until the 45-minute lease expires.
+- A `States.Runtime` failure (for example a stage returning no `key`) ends the execution without marking the
+  run; it stays active until `reconcile_active_runs` runs, which nothing schedules yet.
+- If the record of the Gold key cannot be written, the run is `partial_failure` without a `gold_key`, so the
+  registration command needs the key found by hand (`gold/eirgrid/daily_demand/run_date=<date>/`).
+- `reconcile_active_runs` ignores runs already marked `interrupted`, so a late `SUCCEEDED` outcome does not
+  overwrite a restart's guess (cannot happen inside the lease: the workflow limit is 30 minutes).
+- The workflow does not renew the lock lease; this is safe only while the workflow limit stays below the lease.
+- Failed attempts and failed runs leave Bronze and Silver objects behind; Bronze and Silver have no retention rule.
+- Workflow timestamps end in `Z` and the store's in `+00:00`.
+- The API's local-thread executor (`src/api.py`) is unchanged and keeps timestamped names.
+- Real behaviour of Lambda, Step Functions, DynamoDB and Glue (permissions, quotas, timing, error names such as the
+  Lambda `errorType` of `TransientEirGridError`) is assumed from documentation and untested.
+
+### Deployment prerequisites still open
+
+Everything in the Phase 9.4 and 9.5 sections: bootstrap and deployment, image publication, administrator
+confirmation of Glue and Step Functions permissions, a supervised test run, logging and alarms, scheduling the
+reconciler, and a separate reviewed change to activate execution.

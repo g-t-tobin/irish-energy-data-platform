@@ -3,6 +3,12 @@
 It runs the synthesised definition against in-process doubles (real stage handlers, the DynamoDB
 test double), so tests can check the exact data each state passes on. It is not a general ASL
 implementation: unsupported features raise instead of being guessed.
+
+Modelled: Task (Lambda invoke, DynamoDB updateItem and deleteItem), Succeed, Fail, Parameters,
+ResultSelector, ResultPath, Retry (counted per retrier, backoff recorded, never slept) and Catch.
+An unresolvable path is a States.Runtime error, which States.ALL does not catch (AWS docs).
+Not modelled: wall-clock time, TimeoutSeconds (a test can raise TaskError("States.Timeout")),
+the 256 KiB payload limit, redrive and any state type the pipeline definition does not use.
 """
 
 import copy
@@ -34,8 +40,11 @@ def lookup(path: str, data: Any, context: dict) -> Any:
         node, parts = data, path[2:].split(".")
     else:
         raise ValueError(f"unsupported path {path!r}")
-    for part in parts:
-        node = node[part]
+    try:
+        for part in parts:
+            node = node[part]
+    except (KeyError, TypeError, IndexError) as exc:
+        raise TaskError("States.Runtime", f"path {path!r} could not be resolved") from exc
     return node
 
 
@@ -87,6 +96,7 @@ class Execution:
         self.visited: list[str] = []
         self.lambda_events: list[tuple[str, dict]] = []
         self.invocations: dict[str, int] = {}
+        self.waits: dict[str, list[float]] = {}  # recorded retry delays in seconds, not slept
 
     def run(self, execution_input: dict) -> dict:
         state_data = copy.deepcopy(execution_input)
@@ -116,7 +126,7 @@ class Execution:
             try:
                 result = self._call(name, state, data, context)
             except TaskError as error:
-                retry = self._matching_retry(state, error, attempts)
+                retry = self._matching_retry(name, state, error, attempts)
                 if retry:
                     continue
                 catch = next(
@@ -130,13 +140,17 @@ class Execution:
 
     @staticmethod
     def _matches(error_equals: list[str], name: str) -> bool:
-        return "States.ALL" in error_equals or name in error_equals
+        return ("States.ALL" in error_equals and name != "States.Runtime") or name in error_equals
 
-    def _matching_retry(self, state: dict, error: TaskError, attempts: dict[int, int]) -> bool:
+    def _matching_retry(self, state_name: str, state: dict, error: TaskError, attempts: dict[int, int]) -> bool:
         for index, retry in enumerate(state.get("Retry", [])):
             if self._matches(retry["ErrorEquals"], error.name):
                 attempts[index] = attempts.get(index, 0) + 1
-                return attempts[index] <= retry["MaxAttempts"]
+                if attempts[index] > retry["MaxAttempts"]:
+                    return False
+                wait = retry["IntervalSeconds"] * retry["BackoffRate"] ** (attempts[index] - 1)
+                self.waits.setdefault(state_name, []).append(wait)
+                return True
         return False
 
     def _call(self, name: str, state: dict, data: dict, context: dict) -> Any:

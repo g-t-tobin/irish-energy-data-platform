@@ -75,7 +75,7 @@ def ingest_handler(event: Any, context: Any = None) -> dict[str, Any]:
     days_back = _days_back(event)
     bucket = _bucket()
     payload = fetch_demand_data(days_back=days_back)
-    key = save_to_s3(payload, bucket)
+    key = save_to_s3(payload, bucket, run_id)
     logger.info("stage=bronze run_id=%s records=%d key=%s", run_id, len(payload["Rows"]), key)
     return {"key": key, "records": len(payload["Rows"])}
 
@@ -83,7 +83,7 @@ def ingest_handler(event: Any, context: Any = None) -> dict[str, Any]:
 def silver_handler(event: Any, context: Any = None) -> dict[str, Any]:
     run_id = _run_id(event)
     bronze_key = _upstream_key(event, "bronze", _BRONZE_KEY_RE)
-    key = process_bronze_object(_bucket(), bronze_key)
+    key = process_bronze_object(_bucket(), bronze_key, run_id)
     logger.info("stage=silver run_id=%s input=%s key=%s", run_id, bronze_key, key)
     return {"key": key}
 

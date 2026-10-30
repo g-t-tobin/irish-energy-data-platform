@@ -232,17 +232,20 @@ def test_next_stage_input_has_exactly_the_shape_the_handler_reads(aws, definitio
 
 
 def test_transient_lambda_errors_are_retried_with_bounded_exponential_backoff(definition):
-    for state in lambda_tasks(definition).values():
-        (retry,) = state["Retry"]
+    for name, state in lambda_tasks(definition).items():
+        retry, *others = state["Retry"]
         assert retry["ErrorEquals"] == spec.LAMBDA_TRANSIENT_ERRORS
         assert all(error.startswith("Lambda.") for error in retry["ErrorEquals"])
-        assert 1 <= retry["MaxAttempts"] <= 3
-        assert retry["IntervalSeconds"] >= 1 and retry["BackoffRate"] >= 2.0
+        for item in state["Retry"]:
+            assert 1 <= item["MaxAttempts"] <= 3
+            assert item["IntervalSeconds"] >= 1 and item["BackoffRate"] >= 2.0
+        # only ingestion has a second retrier, for transient EirGrid failures
+        assert [r["ErrorEquals"] for r in others] == ([spec.TRANSIENT_SOURCE_ERRORS] if name == "Bronze" else [])
 
 
 def test_permanent_and_function_errors_are_never_retried(definition):
     for state in lambda_tasks(definition).values():
-        errors = set(state["Retry"][0]["ErrorEquals"])
+        errors = {e for retrier in state["Retry"] for e in retrier["ErrorEquals"]}
         assert not errors & {"States.ALL", "States.TaskFailed", "StageInputError", "StageConfigurationError",
                              "Lambda.Unknown", "Sandbox.Timedout", "States.Timeout"}
 
