@@ -20,3 +20,9 @@ infrastructure/cdk.out/
 
 # Local SSH public key
 irish-energy-data-platform-public-key-git.pub
+
+# Local run-history database
+.local/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

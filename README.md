@@ -154,7 +154,101 @@ The project intentionally retains the existing AWS permission restrictions.
 - Add data quality metrics and pipeline observability.
 - Add CI to run tests and CDK synthesis on pull requests.
 - Add sample query results and visualizations to demonstrate the analytics.
+- Production readiness findings and the administrator handover:
+  [docs/production-readiness-review.md](docs/production-readiness-review.md) and
+  [docs/administrator-handover.md](docs/administrator-handover.md).
+- Hostnames, ACM certificates and Route 53 records for the energy edge stacks:
+  [docs/deployment-dns-and-certificates.md](docs/deployment-dns-and-certificates.md).
+- Secure and productionise the API: see
+  [docs/security-and-production-architecture.md](docs/security-and-production-architecture.md)
+  and the phased plan in
+  [docs/api-security-implementation-plan.md](docs/api-security-implementation-plan.md).
 
 ## Disclaimer
 
 This is a portfolio and learning project. It is not an official EirGrid product or a production electricity-market reporting service.
+
+## Run history storage
+
+The API stores pipeline run history in a local SQLite file
+(`RUN_HISTORY_DB_PATH`, default `.local/run_history.sqlite3`, git-ignored) so
+records survive restarts. On startup, runs left `queued` or `running` by a
+previous process are marked `interrupted` because their outcome is unknown.
+
+This is for local development with a single API process only. A SQLite file on
+an ECS task's ephemeral filesystem is lost when the task is replaced and must
+not be shared between tasks. A future deployment should use a shared store such
+as DynamoDB, with explicitly scoped IAM permissions, behind `src/run_store.py`.
+
+Inspect it read-only: `sqlite3 -readonly .local/run_history.sqlite3 "SELECT run_id, status, stage, created_at FROM runs ORDER BY created_at DESC LIMIT 10;"`
+
+## Running the API locally
+
+```bash
+API_ENV=local S3_BUCKET=<bucket> AWS_PROFILE=<profile> \
+  .venv/bin/uvicorn src.api:app --host 127.0.0.1 --port 8001
+```
+
+`API_ENV` defaults to `production`, which allows no CORS origins and serves no
+API docs; `local` allows the Vite dev origins. `POST /api/runs` returns 503
+because pipeline execution is disabled and cannot be enabled by configuration
+until authentication and managed execution exist. Install test dependencies
+with `pip install -r requirements-dev.txt`.
+
+Only `/health` is public. The other routes require a Cognito access token
+(`Authorization: Bearer ...`) from a user in the `viewer` or `operator` group,
+verified against the pool configured by `COGNITO_REGION`,
+`COGNITO_USER_POOL_ID` and `COGNITO_APP_CLIENT_ID`. If these are unset the
+protected routes return 503 rather than allowing access, so the dashboard shows
+errors until frontend sign-in is added. There is no authentication bypass.
+
+With `API_ENV=production` the app refuses to start unless all three `COGNITO_*`
+variables are set and valid. Read endpoints are rate limited per user
+(`RATE_LIMIT_READ_PER_MINUTE` 60, `RATE_LIMIT_ANALYTICS_PER_MINUTE` 30,
+`RATE_LIMIT_WRITE_PER_HOUR` 5, `RATE_LIMIT_AUTH_FAILURES_PER_MINUTE` 20 per
+client address) and return 429 with `Retry-After`. Limits are held in memory per
+API process, so running several processes or tasks multiplies them; add a shared
+limit (for example a WAF rate rule) before scaling out. Behind a proxy, start
+uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy address>` so client
+addresses are real. Responses carry an `X-Request-ID`; the same ID appears in the
+JSON server logs, which redact tokens and secrets. Client responses never include
+bucket names, S3 keys, raw exception text or stack traces.
+
+## Frontend sign-in
+
+The dashboard signs in through the Amazon Cognito Hosted UI using the OAuth 2.0
+authorization-code flow with PKCE (AWS Amplify Auth). It needs an existing
+Cognito user pool and a public app client (no client secret) that you or an
+administrator create; nothing in this repository creates or changes Cognito.
+Copy `frontend/.env.example` to `frontend/.env.development.local` (git-ignored)
+and set:
+
+| Variable | Format |
+|---|---|
+| `VITE_COGNITO_USER_POOL_ID` | `eu-west-1_AbC123xyz` |
+| `VITE_COGNITO_APP_CLIENT_ID` | alphanumeric app client ID |
+| `VITE_COGNITO_DOMAIN` | hosted UI domain, host name only, no `https://` |
+| `VITE_COGNITO_REDIRECT_SIGN_IN` / `_SIGN_OUT` | exact callback and sign-out URLs registered on the app client (`https://`, or `http://localhost`/`127.0.0.1` for development) |
+| `VITE_COGNITO_SCOPES` | optional, default `openid` |
+
+The same pool and client IDs must be passed to the API as `COGNITO_REGION`,
+`COGNITO_USER_POOL_ID` and `COGNITO_APP_CLIENT_ID`, and users need to be in the
+`viewer` or `operator` Cognito group. If the frontend variables are missing or
+invalid the app shows which ones and does not run; there is no sign-in bypass.
+
+Tokens are kept in memory only, so reloading the page asks you to sign in again
+(usually instant while the Cognito session is active). The API receives the
+access token as `Authorization: Bearer ...`; the ID token is never sent. Group
+names shown in the UI come from that session and only affect what is displayed.
+The API enforces access, and pipeline execution stays disabled for everyone.
+Run the frontend tests with `npm test` in `frontend/`.
+
+## Shared run history (design)
+
+Run history can be kept in a shared DynamoDB table instead of local SQLite
+(`RUN_HISTORY_BACKEND=dynamodb`, `RUN_HISTORY_TABLE`, optional
+`RUN_HISTORY_REGION`). The table, Step Functions workflow and least-privilege IAM
+policies are specified as data in `infrastructure/run_control/spec.py` and
+explained in `docs/adr/0001-shared-run-history-and-step-functions.md`, including
+migration and rollback. Nothing is deployed, the Step Functions executor is not
+wired into the API, and pipeline execution stays disabled.
