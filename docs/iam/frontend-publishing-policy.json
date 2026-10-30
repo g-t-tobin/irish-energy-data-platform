@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListAndLocateTheSiteBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:aws:s3:::REPLACE_SITE_BUCKET"
+      ]
+    },
+    {
+      "Sid": "UploadAndReplaceSiteObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::REPLACE_SITE_BUCKET/*"
+      ]
+    },
+    {
+      "Sid": "InvalidateTheFrontendDistributionOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::851725545966:distribution/REPLACE_DISTRIBUTION_ID"
+      ]
+    }
+  ]
+}

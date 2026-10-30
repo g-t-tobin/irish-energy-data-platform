@@ -39,7 +39,7 @@ def test_all_stacks_including_the_data_lake_are_pinned_to_the_project_environmen
     assert result.returncode == 0, result.stderr
     artifacts = json.loads((tmp_path / "manifest.json").read_text())["artifacts"]
     stacks = {name: a["environment"] for name, a in artifacts.items() if name.endswith("Stack")}
-    assert "IrishEnergyDataLakeStack" in stacks and len(stacks) == len(templates) == 5
+    assert "IrishEnergyDataLakeStack" in stacks and len(stacks) == len(templates) == 6
     assert set(stacks.values()) == {f"aws://{ACCOUNT}/eu-west-1"}  # no unknown-account stack
 
 
@@ -55,7 +55,7 @@ def test_the_correct_account_and_region_synthesize_every_configuration(tmp_path)
     result, templates = run_app(tmp_path, env_extra={"CDK_DEFAULT_ACCOUNT": ACCOUNT, "CDK_DEFAULT_REGION": "eu-west-1"})
 
     assert result.returncode == 0, result.stderr
-    assert len(templates) == 5
+    assert len(templates) == 6
 
 
 BAD_ACCOUNTS = {

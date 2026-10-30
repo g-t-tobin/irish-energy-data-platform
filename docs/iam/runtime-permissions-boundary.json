@@ -1,0 +1,309 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Logs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-*:*",
+        "arn:aws:logs:eu-west-1:851725545966:log-group:IrishEnergyApiEdgeStack-ApiServiceLogGroup*:*"
+      ]
+    },
+    {
+      "Sid": "BronzeWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/bronze/eirgrid/demand_actual/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "SilverRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/bronze/eirgrid/demand_actual/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "SilverWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/silver/eirgrid/demand_actual/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "GoldRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/silver/eirgrid/demand_actual/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "GoldWrite",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/gold/eirgrid/daily_demand/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "GluePartitions",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetTable",
+        "glue:CreatePartition"
+      ],
+      "Resource": [
+        "arn:aws:glue:eu-west-1:851725545966:catalog",
+        "arn:aws:glue:eu-west-1:851725545966:database/irish_energy_analytics",
+        "arn:aws:glue:eu-west-1:851725545966:table/irish_energy_analytics/daily_electricity_demand"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ApiList",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+          ]
+        },
+        "StringLike": {
+          "s3:prefix": [
+            "gold/eirgrid/daily_demand/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ApiRead",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966/gold/eirgrid/daily_demand/*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ApiItems",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReconWorkflowItems",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*",
+            "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "Query",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history/index/gsi1"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*",
+            "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DescribeRuns",
+      "Effect": "Allow",
+      "Action": [
+        "states:DescribeExecution"
+      ],
+      "Resource": [
+        "arn:aws:states:eu-west-1:851725545966:execution:irish-energy-pipeline:*"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*",
+            "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "WorkflowInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-bronze",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-silver",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-gold",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-glue-registration"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "SchedulerInvoke",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-run-reconciler"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "EcsPull",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-west-1:851725545966:repository/irish-energy-api"
+      ],
+      "Condition": {
+        "ArnLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "EcsToken",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyStartExecution",
+      "Effect": "Deny",
+      "Action": [
+        "states:StartExecution"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

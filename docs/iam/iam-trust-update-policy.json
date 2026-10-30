@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TemporaryTrustPolicyUpdateOnTheNineProjectRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:UpdateAssumeRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+      ]
+    }
+  ]
+}

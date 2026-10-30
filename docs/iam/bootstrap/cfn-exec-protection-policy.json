@@ -1,0 +1,119 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyChangingBootstrapRoles",
+      "Effect": "Deny",
+      "Action": [
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:DeleteRole",
+        "iam:UpdateRole",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/cdk-energydev01-*"
+      ]
+    },
+    {
+      "Sid": "DenyChangingExecutionAndBoundaryPolicies",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:policy/irish-energy-*",
+        "arn:aws:iam::851725545966:policy/cdk-energydev01-*"
+      ]
+    },
+    {
+      "Sid": "DenyWritingTheBootstrapAssetBucket",
+      "Effect": "Deny",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:PutBucketPolicy",
+        "s3:DeleteBucketPolicy",
+        "s3:DeleteBucket",
+        "s3:PutBucketVersioning",
+        "s3:PutLifecycleConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutBucketPublicAccessBlock"
+      ],
+      "Resource": [
+        "arn:aws:s3:::cdk-energydev01-assets-851725545966-eu-west-1",
+        "arn:aws:s3:::cdk-energydev01-assets-851725545966-eu-west-1/*"
+      ]
+    },
+    {
+      "Sid": "DenyChangingTheBootstrapContainerRepository",
+      "Effect": "Deny",
+      "Action": [
+        "ecr:PutImage",
+        "ecr:BatchDeleteImage",
+        "ecr:DeleteRepository",
+        "ecr:SetRepositoryPolicy",
+        "ecr:DeleteRepositoryPolicy",
+        "ecr:PutLifecyclePolicy",
+        "ecr:PutImageTagMutability"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-west-1:851725545966:repository/cdk-energydev01-container-assets-851725545966-eu-west-1"
+      ]
+    },
+    {
+      "Sid": "DenyChangingBootstrapParameters",
+      "Effect": "Deny",
+      "Action": [
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:DeleteParameters"
+      ],
+      "Resource": [
+        "arn:aws:ssm:eu-west-1:851725545966:parameter/cdk-bootstrap/*"
+      ]
+    },
+    {
+      "Sid": "DenyChangingToolkitStacks",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:SetStackPolicy",
+        "cloudformation:UpdateTerminationProtection"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/CDKToolkit*/*"
+      ]
+    },
+    {
+      "Sid": "DenyAssumingAnyOtherRole",
+      "Effect": "Deny",
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyCreatingUsersOrLongLivedCredentials",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:CreateServiceSpecificCredential"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

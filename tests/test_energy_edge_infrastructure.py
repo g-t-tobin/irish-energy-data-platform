@@ -331,6 +331,7 @@ def test_app_synthesizes_the_data_lake_and_registry_without_certificates(tmp_pat
     assert result.returncode == 0, result.stderr
     assert templates_ == [
         "IrishEnergyApiRegistryStack.template.json",
+        "IrishEnergyCognitoStack.template.json",
         "IrishEnergyDataLakeStack.template.json",
         "IrishEnergyPipelineStack.template.json",
         "IrishEnergyRunHistoryStack.template.json",
@@ -348,6 +349,7 @@ def test_app_synthesizes_all_independent_stacks_with_both_certificates(tmp_path)
     assert templates_ == [
         "IrishEnergyApiEdgeStack.template.json",
         "IrishEnergyApiRegistryStack.template.json",
+        "IrishEnergyCognitoStack.template.json",
         "IrishEnergyDataLakeStack.template.json",
         "IrishEnergyFrontendStack.template.json",
         "IrishEnergyPipelineStack.template.json",

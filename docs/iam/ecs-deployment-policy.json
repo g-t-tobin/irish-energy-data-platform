@@ -1,0 +1,81 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcsClusterAndServiceOfTheEdgeStack",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:CreateCluster",
+        "ecs:DeleteCluster",
+        "ecs:DescribeClusters",
+        "ecs:UpdateCluster",
+        "ecs:UpdateClusterSettings",
+        "ecs:CreateService",
+        "ecs:UpdateService",
+        "ecs:DeleteService",
+        "ecs:DescribeServices",
+        "ecs:TagResource",
+        "ecs:UntagResource",
+        "ecs:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:ecs:eu-west-1:851725545966:cluster/IrishEnergyApiEdgeStack-*",
+        "arn:aws:ecs:eu-west-1:851725545966:service/IrishEnergyApiEdgeStack-*/IrishEnergyApiEdgeStack-*"
+      ]
+    },
+    {
+      "Sid": "EcsRegisterAndDescribeTaskDefinitionsNoResourceLevelSupport",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:RegisterTaskDefinition",
+        "ecs:DescribeTaskDefinition"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcsDeregisterOnlyTheProjectTaskDefinitionFamily",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DeregisterTaskDefinition"
+      ],
+      "Resource": [
+        "arn:aws:ecs:eu-west-1:851725545966:task-definition/IrishEnergyApiEdgeStackApiServiceTaskDefinition*:*"
+      ]
+    },
+    {
+      "Sid": "ApiServiceLogGroupRetained",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsForResource",
+        "logs:ListTagsLogGroup"
+      ],
+      "Resource": [
+        "arn:aws:logs:eu-west-1:851725545966:log-group:IrishEnergyApiEdgeStack-ApiServiceLogGroup*"
+      ]
+    },
+    {
+      "Sid": "ServiceLinkedRolesForEcsAndElb",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateServiceLinkedRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/aws-service-role/ecs.amazonaws.com/AWSServiceRoleForECS",
+        "arn:aws:iam::851725545966:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": [
+            "ecs.amazonaws.com",
+            "elasticloadbalancing.amazonaws.com"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DescribeOnlyTheEnergyUserPool",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:DescribeUserPool"
+      ],
+      "Resource": [
+        "arn:aws:cognito-idp:eu-west-1:851725545966:userpool/REPLACE_USER_POOL_ID"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ChangeOnlyTheProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:DeleteChangeSet",
+        "cloudformation:RollbackStack",
+        "cloudformation:ContinueUpdateRollback"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyCognitoStack/*"
+      ]
+    },
+    {
+      "Sid": "DeleteOnlyTheStatelessProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DeleteStack"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*"
+      ]
+    },
+    {
+      "Sid": "ReadOnlyTheProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:ListStackResources",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetTemplateSummary"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyCognitoStack/*"
+      ]
+    },
+    {
+      "Sid": "PassOnlyTheProjectCloudFormationExecutionRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/cdk-energydev01-cfn-exec-role-851725545966-eu-west-1"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "cloudformation.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ReadTemplatesFromTheProjectAssetBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetBucketLocation",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::cdk-energydev01-assets-851725545966-eu-west-1",
+        "arn:aws:s3:::cdk-energydev01-assets-851725545966-eu-west-1/*"
+      ]
+    },
+    {
+      "Sid": "ReadTheBootstrapVersionParameter",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters"
+      ],
+      "Resource": [
+        "arn:aws:ssm:eu-west-1:851725545966:parameter/cdk-bootstrap/energydev01/version"
+      ]
+    },
+    {
+      "Sid": "ShowCallerIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

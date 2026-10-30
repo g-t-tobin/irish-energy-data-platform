@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CancelRollbackOrDeleteStatelessProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CancelUpdateStack",
+        "cloudformation:ContinueUpdateRollback",
+        "cloudformation:RollbackStack",
+        "cloudformation:DeleteStack"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*"
+      ]
+    },
+    {
+      "Sid": "DenyDeletingStatefulSupervisedOrBootstrapStacks",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:DeleteStack"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/CDKToolkit*/*"
+      ]
+    }
+  ]
+}

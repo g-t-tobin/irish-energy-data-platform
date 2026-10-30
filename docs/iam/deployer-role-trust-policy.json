@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowIrishEnergyOperator",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::851725545966:user/irish-energy-deployer-operator"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

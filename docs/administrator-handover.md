@@ -145,16 +145,13 @@ Each step depends on those before it. Stop at any failed check.
 | 5 | Deploy `IrishEnergyPipelineStack` then `IrishEnergyWorkflowStack` (execution still disabled; the API role carries the dormant `states:` statements described in the Phase 9.5 section) | steps 3, 4 | defined early so activation later is a configuration step, but unused until step 12 |
 | 6 | Deploy the ECS API service and ALB target group with the health check on `/health` | steps 2, 3, 4 | the ALB must forward `energy-api.` to a healthy service |
 | 7 | Cognito: pool, public app client, Hosted UI domain, groups, test users, callback URLs for the energy origin | step 1 | the API (step 6 env) and frontend build need its IDs; can be done in parallel with 6 but must finish before 8 and 11 |
-| 8 | Build the frontend with the IDs; deploy `IrishEnergyFrontendStack`; upload and invalidate | steps 2, 6, 7 | needs the us-east-1 certificate and the API hostname |
+| 8 | Build the frontend with the IDs; deploy `IrishEnergyFrontendStack` **in a separately supervised session** (not with the execution role); upload and invalidate | steps 2, 6, 7 | needs the us-east-1 certificate and the API hostname |
 | 9 | Create the alias records for `energy-api.` and `energy.` | steps 6, 8 | records must not point at nothing |
 | 10 | Read-only smoke tests (section 8) | step 9 | verifies the edge before any user |
 | 11 | Authentication and authorization tests | steps 7, 10 | proves 401/403 behaviour with real tokens |
 | 12 | **Separately approved:** activate pipeline execution | all above, a reviewed code change | not part of the handover; see below |
 
-**Step 12 (not authorized by this handover).** Activation requires a new, reviewed
-change: lift the settings guard, construct `StepFunctionsExecutor` with the state machine
-ARN, attach `states:StartExecution` to the API role, schedule the reconciler, and add
-tests. Do it only after steps 1-11 pass and the owner approves in writing. First run
+**Step 12 (not authorized by this handover).** Activation requires a new, reviewed change **and separate written approval**: lift the settings guard so that `PIPELINE_EXECUTION_ENABLED=true` is accepted, construct `StepFunctionsExecutor` with the state machine ARN, enable the reconciler schedule (disabled by default), and add tests; **and** the IAM administrator must replace the runtime permissions boundary with the activation variant `docs/iam/runtime-permissions-boundary-execution-activation.json`. The initial boundary denies `states:StartExecution` for every runtime role, so attaching a permission to the API role is neither sufficient nor the mechanism: the API task role already carries the statement in the CDK template, and it stays ineffective until the boundary is replaced. The activation variant allows it only for the API task role. See `docs/phase-9.7.2.1-boundary-hardening.md`, section 4. Do it only after steps 1-11 pass and the owner approves in writing. First run
 supervised, one operator, with the kill switch (stop activating / revert) ready.
 
 ## 8. Deployment and validation commands
@@ -171,12 +168,13 @@ aws cloudformation describe-stacks --stack-name CDKToolkit --region eu-west-1 --
 aws acm request-certificate --region eu-west-1 --domain-name energy-api.ai-autofy-general-server.com --validation-method DNS
 aws acm request-certificate --region us-east-1 --domain-name energy.ai-autofy-general-server.com --validation-method DNS
 
-# Steps 6 and 8: review, then deploy only the energy stacks
+# Step 6: review, then deploy only the API edge stack. IrishEnergyFrontendStack is NOT deployed here:
+# step 8 is a separately supervised procedure (see the Phase 9.7.2.2 update below).
 cd infrastructure
 export CDK_DEFAULT_ACCOUNT=851725545966 CDK_DEFAULT_REGION=eu-west-1   # required by every cdk command below
-npx cdk diff IrishEnergyApiEdgeStack IrishEnergyFrontendStack \
+npx cdk diff IrishEnergyApiEdgeStack \
   -c apiCertificateArn=<eu-west-1 arn> -c frontendCertificateArn=<us-east-1 arn>
-npx cdk deploy IrishEnergyApiEdgeStack IrishEnergyFrontendStack --require-approval broadening \
+npx cdk deploy IrishEnergyApiEdgeStack --require-approval broadening \
   -c apiCertificateArn=<eu-west-1 arn> -c frontendCertificateArn=<us-east-1 arn>
 
 # Step 3: registry first, then build and push the image (explicit version tag, amd64)
@@ -303,7 +301,7 @@ private tasks, choose C. Do not add a NAT gateway silently.
 
 0. API service only: redeploy the edge stack without the service inputs (it returns to the 503 placeholder), or set the desired count to 0.
 1. Remove the two alias records (`energy-api.`, `energy.`) only.
-2. Destroy the energy stacks (`cdk destroy IrishEnergyFrontendStack IrishEnergyApiEdgeStack`).
+2. Destroy the API edge stack (`cdk destroy IrishEnergyApiEdgeStack`); see items 7 to 10 for what can stop it. The frontend stack is deleted only in a supervised administrator session, never together with the edge stack by one routine command.
    The site bucket is retained (empty and delete it separately); switch off ALB
    deletion protection first.
 3. Remove the new certificates and their validation CNAMEs.
@@ -311,6 +309,26 @@ private tasks, choose C. Do not add a NAT gateway silently.
 5. A stuck active-run lock expires after 45 minutes, or delete the single item
    `LOCK#pipeline` after confirming no execution is running.
 6. If execution was ever activated, revert the activation change first.
+
+7. **Failed first-time creation of a stateful stack** (`IrishEnergyDataLakeStack`, `IrishEnergyApiRegistryStack`,
+   `IrishEnergyRunHistoryStack`). CloudFormation rolls back automatically but leaves what it may not delete. The table
+   `irish-energy-run-history` and the repository `irish-energy-api` are retained by design. For the data lake stack the Glue database,
+   the Glue table and the Athena workgroup also remain, because the execution role has no `glue:DeleteDatabase`, `glue:DeleteTable` or
+   `athena:DeleteWorkGroup`; the stack then stops in a failed rollback state. A stack that ends in `ROLLBACK_COMPLETE` cannot be
+   updated and must be deleted before redeploying.
+8. **Deleting a stateful stack needs separate written approval.** The IAM policy documents do not grant `cloudformation:DeleteStack`
+   on these stacks and `rollback-policy.json` explicitly denies it. This is a deliberate policy choice, not something AWS makes
+   technically impossible: a separately approved permission could allow it. For the data lake stack the administrator first
+   removes, with approval and after read-only confirmation, only the Glue and Athena objects the failed attempt created.
+9. **Retained-resource name collisions.** Because the table and the repository have fixed names and are retained, redeploying the
+   run history or registry stack after a failed first creation fails with an already-exists error until the orphan is dealt with by
+   an approved cleanup or an administrator decision to adopt it (this handover does not specify an import procedure). A table
+   holds run records: switch off deletion protection and point-in-time recovery only with approval, and never delete a table that
+   holds records. A repository is deleted only after checking that no needed image is in it. Run the read-only name-conflict checks first.
+10. **ECS task-definition deregistration (edge stack teardown).** `ecs:DeregisterTaskDefinition` is allowed only for the project
+    family `IrishEnergyApiEdgeStackApiServiceTaskDefinition*`. Whether ECS honours resource-level scoping for it is unverified. If it
+    does not, the permission fails closed and the teardown stops at the task definition. Do not widen the permission: the
+    administrator deregisters the project's task-definition revisions in a supervised step and then continues the deletion.
 
 None of these steps touches the game's resources.
 
@@ -772,3 +790,102 @@ never read), supervised verification of the Lambda trust condition, and all Crit
 
 Correction: `CDK_DEFAULT_ACCOUNT=851725545966` must be set explicitly (with `CDK_DEFAULT_REGION=eu-west-1`) for every
 `cdk synth`, `diff` or `deploy`; a missing, empty or blank value is refused, not just a different account.
+
+## Phase 9.7.2 update
+
+An administrator package is in `docs/iam/` with `docs/phase-9.7.2-administrator-preparation.md`: a restricted CDK deployer, a
+CloudFormation execution role built from five resource-scoped policies (not `AdministratorAccess`), PassRole and ECR
+publishing policies, a read-only verification policy and an optional rollback policy. Before anything else, run the read-only
+bootstrap inspection (section 10 of that document) and decide on a dedicated qualifier and toolkit stack. The developer
+profile gets no deployment permissions. Nothing was applied.
+
+## Phase 9.7.2.1 update
+
+Before the first deployment the IAM administrator must create the permissions boundary `irish-energy-runtime-boundary` from
+`docs/iam/runtime-permissions-boundary.json` (the deployer and the execution role are explicitly denied any change to it) and
+create `iam-role-management-policy.json` as the sixth execution policy. The application must then be told to use the boundary
+(`@aws-cdk/core:permissionsBoundary` context, not yet applied; see `docs/phase-9.7.2.1-boundary-hardening.md`, section 8). Until
+both are done, role creation fails by design. The API task role's `states:StartExecution` is inactive under the initial
+boundary; activation needs the separate variant and approval. `docs/iam/frontend-publishing-policy.json` is optional and needs the
+`SiteBucketName` and `DistributionId` outputs. Nothing was applied.
+
+## Phase 9.7.2.2 update (isolation corrections)
+
+- **Frontend stack is supervised.** The execution role has no CloudFront and no site-bucket permission, because those cannot be
+  isolated from the game's distributions by IAM. The first deployment of `IrishEnergyFrontendStack` (bucket, bucket policy,
+  distribution, origin access control, response headers policy) is a supervised session by the account owner with a
+  time-boxed, separately approved permission set and these steps: read-only pre-checks by the session's own identity (no existing distribution with the alias,
+  list existing origin access controls and response headers policies; not available to the general read-only policy); `cdk diff` of that one stack showing creations only;
+  deploy that one stack by name, never `--all`; check CloudTrail afterwards; record `SiteBucketName`, `DistributionId` and the two
+  policy identifiers; remove the session. Later updates may use `frontend-stack-update-policy.json` with those exact identifiers,
+  attached temporarily. Uploading the site and invalidating the cache use `frontend-publishing-policy.json`. The package contains
+  no policy that can create or delete a distribution.
+- **Load balancer.** The application load balancer now has the fixed name `irish-energy-api` (a one-line change in the edge
+  stack) so listener and rule permissions name it; they cannot match another load balancer. Confirm with
+  `aws elbv2 describe-load-balancers` (read-only) that the name is unused before the edge stack is deployed.
+- **Every runtime-role trust-policy change must be reviewed by hand.** `iam:UpdateAssumeRolePolicy` is not in normal deployment
+  (CloudFormation needs it only when a role's trust policy changes in an update). If a `cdk diff` shows a trust-policy change,
+  stop; the project owner and a security reviewer approve it; only then attach `iam-trust-update-policy.json` for that one
+  deployment and detach it afterwards. The permissions boundary does not protect trust-policy contents, so the review is the
+  only control. A possible trigger is the Lambda trust condition check (H-3).
+- **Resource-based policies can bypass the boundary.** Before deployment run the read-only checks for the data lake bucket policy,
+  both ECR repository policies, Lambda function policies and any DynamoDB resource policy, and remove grants to project role ARNs
+  that the runtime design does not need.
+
+## Phase 9.7.2.2 correction (client secrets, read-only scope, Glue deletion)
+
+- The general read-only policy no longer allows `cognito-idp:DescribeUserPoolClient`, because the response can contain the client secret
+  and `--query` filtering is not an IAM boundary. The energy app client must be inspected separately by the pool's owner using a
+  separately authorised identity limited to that pool, without printing or recording the response (prefer the console). Pool and
+  group checks use `list-user-pool-clients` and `list-groups` for the energy pool only (`list-user-pools` and `describe-user-pool` were later moved out of the general policy, see below). A client secret on the energy client is a finding: it must be a public client.
+- Other read-only calls that could expose unrelated applications (`iam:ListRoles`, `cloudformation:ListExports`, CloudFront lists,
+  `ssm:DescribeParameters`) were removed or scoped to project identifiers; the CloudFront pre-checks belong to the supervised frontend
+  session.
+- `glue:DeleteDatabase`, `glue:DeleteTable` and `athena:DeleteWorkGroup` were removed from the execution policy. If the first creation
+  of the data lake stack fails after creating objects, the administrator cleans up only those objects with approval, then deletes the
+  stack.
+
+## Phase 9.7.2.3 update (documentation consistency)
+
+Unresolved **administrator decisions** that must be made and recorded before the related step:
+
+1. **Which identity carries the temporary frontend permissions.** The repository does not establish it: the CDK application uses the
+   default synthesizer, no separate CloudFormation service role is defined or documented as existing, and the deployer may pass only the
+   bootstrap execution role. Either (A) a separately approved policy is attached temporarily to the CloudFormation execution role, which
+   widens that role for the session and removes IAM isolation from the game's CloudFront resources until it is detached, or (B) a new,
+   separate CloudFormation service role is created by the IAM administrator and used for that stack only, which keeps the execution
+   role narrow but needs administrator work outside this package (creating the role, a narrow `iam:PassRole` to it, a supervised check).
+   In both cases isolation is procedural during the session. Frontend creation must not start until the choice is made. See
+   `docs/phase-9.7.2-administrator-preparation.md`, section 14.1a.
+2. How and by whom stateful stacks are deleted or cleaned up after a failed first creation (items 7 to 9 above).
+3. Whether to adopt or delete retained resources that block a redeploy.
+4. The bootstrap qualifier and the creation of the permissions boundary (see the earlier updates).
+
+## Read-only policy tightening (Lambda and SSM)
+
+- The general read-only policy no longer allows `lambda:GetFunction`, `lambda:GetFunctionConfiguration` or `ssm:GetParametersByPath`. Function
+  configuration responses contain environment variable values, and `GetFunction` also returns a presigned URL to the deployment package.
+- Inspect Lambda **resource policies** with `aws lambda get-policy --function-name <name> --query Policy --output text` for each of the five project functions.
+- Inspect Lambda **configuration** only from the reviewed `cdk diff` and templates. If it must be checked after deployment, use a separately authorised identity
+  and `aws lambda get-function-configuration` with a `--query` selecting non-secret fields; the query is not a security boundary, so never print,
+  log, redirect or record the full response (prefer the console), and never run `aws lambda get-function`.
+- Existing bootstrap qualifiers are found from the `Qualifier` parameter of the `CDKToolkit*` stacks (`describe-stacks`), then the exact version parameter is read with
+  `ssm:GetParameter`. The general policy cannot list SSM parameters.
+- The general policy cannot confirm that a function name is unused; the first creation of the pipeline or reconciler stack fails with an already-exists error and
+  overwrites nothing. The shared hosted zone's records (including the game's) are readable with the energy-zone permission; this is public DNS data and an accepted limitation.
+
+## Separate inspection policies (Phase 9.7.2.3)
+
+Three read permissions are **not** in the general verification policy and each needs **explicit administrator approval** before it is attached, to a separate
+`irish-energy-inspector` role, for one named inspection, then detached. **Read-only is not the same as safe.**
+
+- `docs/iam/dns-inspection-policy.json`: `route53:ListResourceRecordSets` on the energy hosted zone (ID not yet known, placeholder). IAM cannot restrict it to
+  record names, so it shows every record in the shared zone, including the game's. Before approval, decide whether the zone check is needed at all.
+- `docs/iam/cloudformation-diagnostic-policy.json`: `cloudformation:DescribeStackEvents` on the eight project stacks only (never `CDKToolkit*`). Events can contain
+  resource properties and configuration values; IAM does not prevent that. For routine checks use `DescribeStacks` and `DescribeStackResources`.
+- `docs/iam/cognito-inspection-policy.json`: `cognito-idp:DescribeUserPool` on the energy pool (placeholder). It can reveal SMS and Lambda trigger settings. No client
+  secret is available through it.
+- The general policy no longer allows `cognito-idp:ListUserPools` either (each pool summary can include trigger configuration of other pools); take the pool ID
+  from the Cognito owner's record.
+- Safe use: read the JSON, attach for the named purpose, run the single matching command for the single resource, do not save or paste the output, detach.
+  Resource scoping and the response contents are unverified until separately authorised testing.

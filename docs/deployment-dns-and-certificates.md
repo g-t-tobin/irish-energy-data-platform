@@ -70,7 +70,7 @@ Without certificates `cdk synth` produces five stacks: `IrishEnergyDataLakeStack
 `IrishEnergyWorkflowStack`. The two edge stacks (`IrishEnergyApiEdgeStack`, `IrishEnergyFrontendStack`) are added
 only when both certificate ARNs are supplied, giving seven. The optional reconciler stack makes eight
 (`-c reconcilerEnabled=true`; its schedule stays disabled unless `-c reconcilerScheduleState=ENABLED`).
-Every stack, the data lake included, is pinned to account `851725545966` and region `eu-west-1`.
+Every stack, the data lake included, is pinned to account `851725545966` and region `eu-west-1`. Synthesizing a stack does not mean the general execution role deploys it: the frontend stack is created only in a supervised administrator operation (section 6).
 
 ```bash
 cd infrastructure
@@ -88,6 +88,8 @@ account is not exactly `851725545966`. `CDK_DEFAULT_ACCOUNT` must be set explici
 placeholder ARNs (`tests/test_energy_edge_infrastructure.py`).
 
 ## 5. What the stacks create (when deployed later)
+
+The API edge stack is deployed with the general execution role; the frontend stack is created in a supervised administrator operation (section 6).
 
 - `IrishEnergyApiEdgeStack`: its own VPC (public subnets, no NAT), an
   internet-facing ALB with deletion protection and invalid-header dropping, port 80
@@ -110,13 +112,9 @@ A load balancer and VPC have a monthly cost whether or not traffic arrives.
 - [ ] The Cognito app client callback and sign-out URLs use
       `https://energy.ai-autofy-general-server.com/`, and the API's
       `CORS_ALLOWED_ORIGINS` is exactly that origin.
-- [ ] Permissions for ELB, EC2, CloudFront and S3 are confirmed with an
-      administrator; the developer profile is not widened.
+- [ ] Permissions for ELB and EC2 (general execution role) are confirmed with an administrator; the developer profile is not widened. CloudFront and the site bucket are **not** in the general execution policy: creating `IrishEnergyFrontendStack` is a supervised administrator operation, and the identity that carries its temporary permissions is an administrator decision to be made first (`docs/phase-9.7.2-administrator-preparation.md`, section 14.1a).
 - [ ] The game's records, load balancer, distribution and certificate are unchanged.
 
 ## Rollback
 
-Remove the two alias records, then destroy the energy edge stacks. The site bucket
-is retained and must be emptied and deleted separately; the ALB has deletion
-protection that must be switched off first. Certificates and validation records
-can then be removed. None of this touches the game.
+Remove the two alias records. Then destroy the API edge stack (`IrishEnergyApiEdgeStack`) with the rollback permissions: the ALB has deletion protection that an approved update must switch off first, and the teardown can stop at the ECS task definition if resource-level deregistration is not honoured (the administrator then deregisters the project revisions in a supervised step). The frontend stack is **not** destroyed together with the edge stack by one routine command: it is deleted only in a supervised administrator session using permissions outside the general package, deleting the distribution first; the retained site bucket is then emptied and deleted separately. Certificates and validation records can then be removed. None of this touches the game.

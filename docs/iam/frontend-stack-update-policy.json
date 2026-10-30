@@ -1,0 +1,60 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UpdateOnlyTheExistingDistribution",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:ListTagsForResource",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::851725545966:distribution/REPLACE_DISTRIBUTION_ID"
+      ]
+    },
+    {
+      "Sid": "UpdateOnlyTheExistingOriginAccessControl",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetOriginAccessControl",
+        "cloudfront:UpdateOriginAccessControl"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::851725545966:origin-access-control/REPLACE_OAC_ID"
+      ]
+    },
+    {
+      "Sid": "UpdateOnlyTheExistingResponseHeadersPolicy",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:GetResponseHeadersPolicy",
+        "cloudfront:UpdateResponseHeadersPolicy"
+      ],
+      "Resource": [
+        "arn:aws:cloudfront::851725545966:response-headers-policy/REPLACE_RESPONSE_HEADERS_POLICY_ID"
+      ]
+    },
+    {
+      "Sid": "ChangeOnlyTheSettingsOfTheExistingSiteBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:PutBucketPolicy",
+        "s3:GetEncryptionConfiguration",
+        "s3:PutEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:GetBucketTagging",
+        "s3:PutBucketTagging"
+      ],
+      "Resource": [
+        "arn:aws:s3:::REPLACE_SITE_BUCKET"
+      ]
+    }
+  ]
+}

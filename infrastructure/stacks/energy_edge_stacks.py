@@ -70,6 +70,8 @@ class EnergyApiEdgeStack(Stack):
         alb = elbv2.ApplicationLoadBalancer(
             self,
             "Alb",
+            # A fixed name lets IAM scope listener and rule permissions to this load balancer (docs/iam).
+            load_balancer_name="irish-energy-api",
             vpc=vpc,
             internet_facing=True,
             security_group=alb_security_group,

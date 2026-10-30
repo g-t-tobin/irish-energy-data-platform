@@ -1,0 +1,215 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CallerIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadBootstrapVersionParameter",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter"
+      ],
+      "Resource": [
+        "arn:aws:ssm:eu-west-1:851725545966:parameter/cdk-bootstrap/energydev01/version"
+      ]
+    },
+    {
+      "Sid": "ReadBootstrapAndProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:ListStackResources",
+        "cloudformation:GetTemplate"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/CDKToolkit*/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*"
+      ]
+    },
+    {
+      "Sid": "ListStackNames",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:ListStacks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InspectBootstrapAndProjectRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/cdk-energydev01-*-role-851725545966-eu-west-1",
+        "arn:aws:iam::851725545966:role/IrishEnergy*"
+      ]
+    },
+    {
+      "Sid": "InspectBootstrapAssetBucketSettings",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketOwnershipControls"
+      ],
+      "Resource": [
+        "arn:aws:s3:::cdk-energydev01-assets-851725545966-eu-west-1"
+      ]
+    },
+    {
+      "Sid": "InspectDataLakeBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketOwnershipControls",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::irish-energy-data-platform-851725545966"
+      ]
+    },
+    {
+      "Sid": "InspectEcrRepositories",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeRepositories",
+        "ecr:GetRepositoryPolicy",
+        "ecr:GetLifecyclePolicy"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-west-1:851725545966:repository/cdk-energydev01-container-assets-851725545966-eu-west-1",
+        "arn:aws:ecr:eu-west-1:851725545966:repository/irish-energy-api"
+      ]
+    },
+    {
+      "Sid": "InspectGlueAndAthena",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetDatabase",
+        "glue:GetTable",
+        "athena:GetWorkGroup"
+      ],
+      "Resource": [
+        "arn:aws:glue:eu-west-1:851725545966:catalog",
+        "arn:aws:glue:eu-west-1:851725545966:database/irish_energy_analytics",
+        "arn:aws:glue:eu-west-1:851725545966:table/irish_energy_analytics/daily_electricity_demand",
+        "arn:aws:athena:eu-west-1:851725545966:workgroup/irish-energy-analytics"
+      ]
+    },
+    {
+      "Sid": "ListCertificateNames",
+      "Effect": "Allow",
+      "Action": [
+        "acm:ListCertificates"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DescribeOnlyTheTwoEnergyCertificates",
+      "Effect": "Allow",
+      "Action": [
+        "acm:DescribeCertificate"
+      ],
+      "Resource": [
+        "arn:aws:acm:eu-west-1:851725545966:certificate/REPLACE_API_CERT_ID",
+        "arn:aws:acm:us-east-1:851725545966:certificate/REPLACE_FRONTEND_CERT_ID"
+      ]
+    },
+    {
+      "Sid": "ListClientNamesAndGroupsOfTheEnergyUserPool",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:ListUserPoolClients",
+        "cognito-idp:ListGroups"
+      ],
+      "Resource": [
+        "arn:aws:cognito-idp:eu-west-1:851725545966:userpool/REPLACE_USER_POOL_ID"
+      ]
+    },
+    {
+      "Sid": "FindHostedZoneByName",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZonesByName"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "GetOnlyTheEnergyHostedZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/REPLACE_HOSTED_ZONE_ID"
+      ]
+    },
+    {
+      "Sid": "InspectProjectResourcePoliciesAndNames",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:GetPolicy",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetResourcePolicy",
+        "states:DescribeStateMachine",
+        "scheduler:GetSchedule"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-bronze",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-silver",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-gold",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-glue-registration",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-run-reconciler",
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history",
+        "arn:aws:states:eu-west-1:851725545966:stateMachine:irish-energy-pipeline",
+        "arn:aws:scheduler:eu-west-1:851725545966:schedule/default/irish-energy-run-reconciler"
+      ]
+    },
+    {
+      "Sid": "ListNamesForConflictChecks",
+      "Effect": "Allow",
+      "Action": [
+        "states:ListStateMachines",
+        "logs:DescribeLogGroups",
+        "ecs:ListClusters",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "ec2:DescribeVpcs"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InspectServiceQuotas",
+      "Effect": "Allow",
+      "Action": [
+        "servicequotas:ListServiceQuotas",
+        "servicequotas:GetServiceQuota"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

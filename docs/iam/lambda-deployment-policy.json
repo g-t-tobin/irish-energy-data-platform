@@ -1,0 +1,68 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageTheFiveProjectFunctions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:DeleteFunction",
+        "lambda:ListTags",
+        "lambda:TagResource",
+        "lambda:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-bronze",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-silver",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-gold",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-pipeline-glue-registration",
+        "arn:aws:lambda:eu-west-1:851725545966:function:irish-energy-run-reconciler"
+      ]
+    },
+    {
+      "Sid": "PullPipelineImageFromBootstrapRepositoryOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:GetRepositoryPolicy"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-west-1:851725545966:repository/cdk-energydev01-container-assets-851725545966-eu-west-1"
+      ]
+    },
+    {
+      "Sid": "ManageTheFiveFunctionLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsForResource",
+        "logs:ListTagsLogGroup"
+      ],
+      "Resource": [
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-pipeline-bronze",
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-pipeline-silver",
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-pipeline-gold",
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-pipeline-glue-registration",
+        "arn:aws:logs:eu-west-1:851725545966:log-group:/aws/lambda/irish-energy-run-reconciler"
+      ]
+    },
+    {
+      "Sid": "DescribeLogGroupsAccountWideReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

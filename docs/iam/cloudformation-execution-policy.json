@@ -1,0 +1,105 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GlueDatabaseAndTableNoDelete",
+      "Effect": "Allow",
+      "Action": [
+        "glue:CreateDatabase",
+        "glue:GetDatabase",
+        "glue:UpdateDatabase",
+        "glue:CreateTable",
+        "glue:GetTable",
+        "glue:UpdateTable"
+      ],
+      "Resource": [
+        "arn:aws:glue:eu-west-1:851725545966:catalog",
+        "arn:aws:glue:eu-west-1:851725545966:database/irish_energy_analytics",
+        "arn:aws:glue:eu-west-1:851725545966:table/irish_energy_analytics/daily_electricity_demand"
+      ]
+    },
+    {
+      "Sid": "AthenaWorkGroupNoDelete",
+      "Effect": "Allow",
+      "Action": [
+        "athena:CreateWorkGroup",
+        "athena:GetWorkGroup",
+        "athena:UpdateWorkGroup",
+        "athena:TagResource",
+        "athena:UntagResource",
+        "athena:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:athena:eu-west-1:851725545966:workgroup/irish-energy-analytics"
+      ]
+    },
+    {
+      "Sid": "ApiEcrRepositoryNoDelete",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository",
+        "ecr:DescribeRepositories",
+        "ecr:PutLifecyclePolicy",
+        "ecr:GetLifecyclePolicy",
+        "ecr:DeleteLifecyclePolicy",
+        "ecr:PutImageScanningConfiguration",
+        "ecr:PutImageTagMutability",
+        "ecr:TagResource",
+        "ecr:UntagResource",
+        "ecr:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-west-1:851725545966:repository/irish-energy-api"
+      ]
+    },
+    {
+      "Sid": "RunHistoryTableNoDelete",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:DescribeContinuousBackups",
+        "dynamodb:UpdateContinuousBackups",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history",
+        "arn:aws:dynamodb:eu-west-1:851725545966:table/irish-energy-run-history/index/*"
+      ]
+    },
+    {
+      "Sid": "PipelineStateMachine",
+      "Effect": "Allow",
+      "Action": [
+        "states:CreateStateMachine",
+        "states:DescribeStateMachine",
+        "states:UpdateStateMachine",
+        "states:DeleteStateMachine",
+        "states:TagResource",
+        "states:UntagResource",
+        "states:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:states:eu-west-1:851725545966:stateMachine:irish-energy-pipeline"
+      ]
+    },
+    {
+      "Sid": "ReconcilerScheduleOnly",
+      "Effect": "Allow",
+      "Action": [
+        "scheduler:CreateSchedule",
+        "scheduler:GetSchedule",
+        "scheduler:UpdateSchedule",
+        "scheduler:DeleteSchedule"
+      ],
+      "Resource": [
+        "arn:aws:scheduler:eu-west-1:851725545966:schedule/default/irish-energy-run-reconciler"
+      ]
+    }
+  ]
+}

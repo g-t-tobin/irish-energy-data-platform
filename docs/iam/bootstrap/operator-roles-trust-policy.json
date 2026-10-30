@@ -1,0 +1,34 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyTheProjectDeployerMayAssume",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::851725545966:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::851725545966:role/irish-energy-cdk-deployer"
+        },
+        "Null": {
+          "sts:ExternalId": "true"
+        }
+      }
+    },
+    {
+      "Sid": "OnlyTheProjectDeployerMayTagTheSession",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::851725545966:root"
+      },
+      "Action": "sts:TagSession",
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::851725545966:role/irish-energy-cdk-deployer"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PassPipelineAndReconcilerLambdaRolesToLambda",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "lambda.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassApiTaskRolesToEcsTasks",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassWorkflowRoleToStepFunctions",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "states.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassSchedulerRoleToScheduler",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "scheduler.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import os
@@ -8,9 +7,8 @@ from pathlib import Path
 # The run-history table is built from the shared specification and schema in the repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import aws_cdk as cdk  # noqa: E402
-
-from energy_config import (  # noqa: E402
+import aws_cdk as cdk
+from energy_config import (
     ACCOUNT,
     REGION,
     ConfigError,
@@ -19,16 +17,25 @@ from energy_config import (  # noqa: E402
     load_service_config,
     validate_deployment_account,
 )
-from stacks.data_lake_stack import DataLakeStack  # noqa: E402
-from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
-from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
-from stacks.energy_workflow_stack import EnergyWorkflowStack  # noqa: E402
+from stacks.data_lake_stack import DataLakeStack
+from stacks.energy_api_registry_stack import EnergyApiRegistryStack
+from stacks.energy_cognito_stack import EnergyCognitoStack
+from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack
+from stacks.energy_pipeline_stack import EnergyPipelineStack
 from stacks.energy_reconciler_stack import EnergyReconcilerStack
-from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
-from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  # noqa: E402
-
+from stacks.energy_run_history_stack import EnergyRunHistoryStack
+from stacks.energy_workflow_stack import EnergyWorkflowStack
 
 app = cdk.App()
+
+# Also set here because `python app.py` does not read cdk.json; a test keeps the two equal.
+app.node.set_context("@aws-cdk/core:bootstrapQualifier", "energydev01")
+
+# Pre-populated context: the VPC would otherwise look up the availability zones at synthesis, which
+# needs the bootstrap lookup role (a broad read-only role) that the deployment identity must not use.
+app.node.set_context(
+    f"availability-zones:account={ACCOUNT}:region={REGION}", [f"{REGION}a", f"{REGION}b", f"{REGION}c"]
+)
 
 # Every stack, the data lake included, is pinned to the project's account and region; a different
 # active account stops synthesis before any stack exists.
@@ -41,6 +48,13 @@ DataLakeStack(
     app,
     "IrishEnergyDataLakeStack",
     bucket_name="irish-energy-data-platform-851725545966",
+    env=cdk.Environment(account=ACCOUNT, region=REGION),
+)
+
+# Cognito authentication is independent of the API image and ECS service.
+cognito_stack = EnergyCognitoStack(
+    app,
+    "IrishEnergyCognitoStack",
     env=cdk.Environment(account=ACCOUNT, region=REGION),
 )
 

@@ -327,9 +327,51 @@ Verdict: ready after specified blockers are resolved (unverified deployment iden
 and several runtime behaviours that only a real account can confirm). Nothing was deployed; pipeline execution and the
 reconciler schedule remain disabled.
 
+## AWS administrator preparation (Phase 9.7.2)
+
+`docs/phase-9.7.2-administrator-preparation.md` and `docs/iam/` prepare a least-privilege deployment package for an AWS
+administrator: separate deployer, CloudFormation execution and read-only identities, nine reviewable policy documents, the
+CDK bootstrap strategy (dedicated qualifier and toolkit stack recommended), PassRole and ECR publication analysis, rollback
+and a read-only verification checklist. Proposals only: nothing was applied, no AWS call was made, the developer identity
+is unchanged, and pipeline execution and the reconciler schedule stay disabled.
+
+Phase 9.7.2.1 (`docs/phase-9.7.2.1-boundary-hardening.md`) adds a proposed runtime permissions boundary, a role-creation policy
+that allows only nine named roles and only with that boundary, an optional frontend publishing policy, and a decision to
+neutralise the API's `states:StartExecution` through the boundary until execution is separately approved. Policies only; the
+CDK application is unchanged.
+
+Phase 9.7.2.2 (`docs/phase-9.7.2-administrator-preparation.md`, section 14) removes CloudFront and site-bucket permissions from
+the general execution policy (the frontend stack becomes a supervised deployment), scopes listener and rule permissions to a fixed
+load balancer name (`irish-energy-api`, a one-line change in the edge stack), and moves trust-policy updates to a temporary policy.
+
+Limits of the administrator package (details in `docs/iam/README.md` and the phase documents):
+
+- Offline tests (five files: `tests/test_iam_policy_package.py`, `test_iam_boundary.py`, `test_iam_isolation.py`, `test_iam_readonly_secrets.py`, `test_iam_inspection_policies.py`)
+  use local models and invented game ARNs; the game's real resources have not been inspected. Pattern-level tests do not establish
+  effective AWS authorization, which is confirmed only during supervised deployment.
+- Outstanding AWS-dependent assumptions (each fails closed): fixed-name load-balancer scoping, ECS task-definition deregistration
+  resource-level support, the exact SSM bootstrap-version parameter ARN, the IAM permissions-boundary and `aws:PrincipalArn` behaviour, the EC2 and target-group tag
+  conditions, `states:CreateStateMachine` scoping, and the `logs:DescribeLogGroups` wildcard (`Resource: "*"`, not an account-wide ARN).
+- The policy documents do not grant deletion of the protected stateful stacks (data lake, registry, run history); `rollback-policy.json`
+  explicitly denies it, and also denies deleting `CDKToolkit*` stacks. This is a policy choice, not a technical impossibility in AWS.
+- Read-only inspection includes CDK bootstrap metadata and the bootstrap role policies that match the configured qualifier. If the qualifier is
+  shared with the game, that can include the game's bootstrap metadata; it is inspection only.
+- The general read-only policy grants neither `lambda:GetFunction`, `lambda:GetFunctionConfiguration` (environment values, package URL) nor `ssm:GetParametersByPath`; Lambda
+  resource policies are read with `lambda:GetPolicy` on the five project functions, and configuration is verified from reviewed templates or by a separately authorised identity without recording the output.
+- `route53:ListResourceRecordSets`, `cloudformation:DescribeStackEvents` and `cognito-idp:DescribeUserPool` are not in the general read-only policy: each is a separate
+  inspection policy (`dns-inspection-policy.json`, `cloudformation-diagnostic-policy.json`, `cognito-inspection-policy.json`) that needs explicit administrator approval and exposes
+  information (the whole shared zone, stack resource properties, SMS and Lambda trigger settings). Read-only is not the same as safe; behavior is unverified until separately authorised testing.
+- Frontend creation is a supervised administrator operation; which identity carries its temporary permissions is an open administrator decision.
+
 ## Local production-readiness corrections (Phase 9.7.1)
 
 `docs/phase-9.7.1-local-corrections.md`: all stacks are pinned to account `851725545966`/`eu-west-1` and a different
 active account stops synthesis; a production frontend build (`npm run build`) refuses to run without the production
 API and Cognito settings (`npm run build:local` is for local use only); documentation corrections and the Lambda
 trust-condition review. Nothing was deployed.
+
+## Deployment readiness audit (Phase 9.7.3)
+
+`docs/iam/phase-9.7.3-deployment-readiness.md` audits the repository for a first AWS deployment and gives the stack dependency diagram, deployment order, runbook with approval-gated commands, and findings classified BLOCKER, HIGH, MEDIUM and LOW. Status: **READY FOR ADMINISTRATOR PREPARATION**; not ready for a controlled first deployment. Offline checks do not establish effective AWS permissions.
+
+`docs/iam/phase-9.7.4-bootstrap-and-deployment-identity.md` resolves the offline part of the bootstrap findings: it recommends a dedicated CDK qualifier and toolkit stack with scoped deployment and execution roles (`docs/iam/bootstrap/`, not applied) and the availability-zone lookup no longer needs the lookup role (`infrastructure/app.py`).

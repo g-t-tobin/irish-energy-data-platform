@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyCloudFormationForTheProjectStacks",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudformation.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceAccount": "851725545966"
+        },
+        "ArnLike": {
+          "aws:SourceArn": [
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*",
+            "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyCognitoStack/*"
+          ]
+        }
+      }
+    }
+  ]
+}

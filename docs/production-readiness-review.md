@@ -246,3 +246,30 @@ schedule remains disabled by default.
 The data lake stack is now account-pinned and a wrong active account stops synthesis before any stack exists; production
 frontend builds fail without the required settings; the stack-count statement in the DNS and certificates guide is corrected.
 Details and remaining risks: `docs/phase-9.7.1-local-corrections.md`.
+
+## Phase 9.7.2 update
+
+The permissions audit asked for by blocker C-1 now has a proposal: `docs/iam/` (separate deployer, execution and read-only
+policies, PassRole limited to project roles, no delete rights for retained resources, no `StartExecution` or invocation for
+any identity) and `docs/phase-9.7.2-administrator-preparation.md`. C-1 stays open until the administrator confirms the
+bootstrap state and the policies are applied and exercised in a supervised deployment.
+
+## Phase 9.7.2.1 update
+
+The IAM role-creation risk of Phase 9.7.2 is reduced: nine named roles, boundary required, boundary protected from the deployer,
+no managed-policy attachment. See `docs/phase-9.7.2.1-boundary-hardening.md`. Still open: the boundary must be created and applied
+by the administrator and exercised in a supervised deployment, and trust-policy content cannot be restricted by IAM.
+
+## Phase 9.7.2.2 update
+
+CloudFront and site-bucket permissions were removed from the general execution policy and the frontend stack became a
+supervised deployment, because IAM cannot isolate CloudFront creation or the generated identifiers from the game. The load balancer
+has a fixed name so listener permissions are scoped, trust-policy updates are a separately approved step, and resource-based
+policy bypass checks were added. Details: `docs/phase-9.7.2-administrator-preparation.md`, section 14.
+
+## Phase 9.7.2.2 correction
+
+The general read-only policy no longer allows `cognito-idp:DescribeUserPoolClient` (it can return a client secret) or other calls
+that expose unrelated applications' configuration; the app client is inspected separately by an authorised identity without
+recording output. `glue:DeleteDatabase`, `glue:DeleteTable` and `athena:DeleteWorkGroup` were removed from the execution policy.
+See `docs/phase-9.7.2-administrator-preparation.md`, sections 14.7 and 14.8.

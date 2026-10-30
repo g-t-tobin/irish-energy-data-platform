@@ -1,0 +1,118 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CreateNineProjectRolesOnlyWithTheBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::851725545966:policy/irish-energy-runtime-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "WriteInlinePoliciesOnlyWhenTheBoundaryIsAttached",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::851725545966:policy/irish-energy-runtime-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "ReadTagAndDeleteTheNineProjectRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:DeleteRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-BronzeRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-SilverRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GoldRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyPipelineStack-GlueRegistrationRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-Role*",
+        "arn:aws:iam::851725545966:role/IrishEnergyReconcilerStack-SchedulerRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyWorkflowStack-StateMachineRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceExecutionRole*",
+        "arn:aws:iam::851725545966:role/IrishEnergyApiEdgeStack-ApiServiceTaskRole*"
+      ]
+    },
+    {
+      "Sid": "DenyManagedPolicyAttachmentAndBoundaryChanges",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/*"
+      ]
+    },
+    {
+      "Sid": "DenyChangingTheBoundaryPolicy",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:policy/irish-energy-runtime-boundary"
+      ]
+    },
+    {
+      "Sid": "DenyCreatingOrWritingAnyRoleWithoutTheBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::851725545966:policy/irish-energy-runtime-boundary"
+        }
+      }
+    }
+  ]
+}

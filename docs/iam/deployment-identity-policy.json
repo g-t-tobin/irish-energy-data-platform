@@ -1,0 +1,109 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeBootstrapDeployAndPublishingRoles",
+      "Effect": "Allow",
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/cdk-energydev01-deploy-role-851725545966-eu-west-1",
+        "arn:aws:iam::851725545966:role/cdk-energydev01-file-publishing-role-851725545966-eu-west-1",
+        "arn:aws:iam::851725545966:role/cdk-energydev01-image-publishing-role-851725545966-eu-west-1"
+      ]
+    },
+    {
+      "Sid": "ShowCallerIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "MonitorProjectStacks",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:ListStackResources",
+        "cloudformation:GetTemplate",
+        "cloudformation:GetTemplateSummary",
+        "cloudformation:DescribeChangeSet",
+        "cloudformation:ListChangeSets"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyDataLakeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiRegistryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyRunHistoryStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyPipelineStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyWorkflowStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyReconcilerStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyApiEdgeStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyFrontendStack/*",
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/IrishEnergyCognitoStack/*"
+      ]
+    },
+    {
+      "Sid": "PassOnlyTheApprovedCloudFormationExecutionRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/cdk-energydev01-cfn-exec-role-851725545966-eu-west-1"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "cloudformation.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "DenyAnyChangeToBootstrapStacks",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:CreateChangeSet",
+        "cloudformation:ExecuteChangeSet",
+        "cloudformation:SetStackPolicy",
+        "cloudformation:UpdateTerminationProtection"
+      ],
+      "Resource": [
+        "arn:aws:cloudformation:eu-west-1:851725545966:stack/CDKToolkit*/*"
+      ]
+    },
+    {
+      "Sid": "DenyChangingTheBoundaryPolicy",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicy",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:policy/irish-energy-runtime-boundary"
+      ]
+    },
+    {
+      "Sid": "DenyRemovingOrReplacingARoleBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::851725545966:role/*"
+      ]
+    }
+  ]
+}
