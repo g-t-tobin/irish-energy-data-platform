@@ -276,5 +276,4 @@ Run history can be kept in a shared DynamoDB table instead of local SQLite
 `RUN_HISTORY_REGION`). The table, Step Functions workflow and least-privilege IAM
 policies are specified as data in `infrastructure/run_control/spec.py` and
 explained in `docs/adr/0001-shared-run-history-and-step-functions.md`, including
-migration and rollback. Nothing is deployed, the Step Functions executor is not
-wired into the API, and pipeline execution stays disabled.
+migration and rollback. A DynamoDB gateway VPC endpoint with a table-and-index-only policy keeps the API's run-history traffic on the AWS network (no hourly endpoint charge; defined and tested by offline synthesis, not deployed or verified against AWS). Nothing is deployed, the Step Functions executor is not wired into the API, and pipeline execution stays disabled.

@@ -23,6 +23,7 @@ class FakeDynamoDB:
     def __init__(self) -> None:
         self.items: dict[tuple[str, str], dict[str, Any]] = {}
         self.calls: list[str] = []
+        self.transaction_item_types: set[str] = set()
         self.fail_with: ClientError | None = None
         self._lock = threading.RLock()
 
@@ -163,6 +164,7 @@ class FakeDynamoDB:
         with self._lock:
             reasons, ok = [], True
             for entry in TransactItems:
+                self.transaction_item_types.update(entry)
                 put = entry["Put"]
                 current = self.items.get(self._key(put["Item"]))
                 values = put.get("ExpressionAttributeValues") or {}

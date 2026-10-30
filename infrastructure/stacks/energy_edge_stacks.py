@@ -14,10 +14,12 @@ from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_ecr as ecr
 from aws_cdk import aws_elasticloadbalancingv2 as elbv2
+from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
 
 from energy_config import ApiServiceConfig, EdgeConfig
+from src import run_history_schema as schema
 from stacks.energy_api_service import ApiService
 
 PROJECT_TAG = "irish-energy-data-platform"
@@ -104,6 +106,39 @@ class EnergyApiEdgeStack(Stack):
         else:
             # Keeps S3 traffic (Gold reads, image layers) on the AWS network at no cost.
             vpc.add_gateway_endpoint("S3Endpoint", service=ec2.GatewayVpcEndpointAwsService.S3)
+            # Run-history traffic stays on the AWS network (no hourly charge, no NAT). It serves
+            # the route tables of the public subnets the ECS tasks run in. The endpoint policy
+            # only narrows access further; the task role still decides what is allowed.
+            dynamodb_endpoint = vpc.add_gateway_endpoint(
+                "DynamoDbEndpoint",
+                service=ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+                subnets=[ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC)],
+            )
+            table_arn = table.table_arn
+            # Same split as the task role: item operations on the table, Query on the index only.
+            # (The run store's one write transaction contains only Put items, which IAM authorises
+            # as dynamodb:PutItem; there is no separate TransactWriteItems IAM action.)
+            dynamodb_endpoint.add_to_policy(
+                iam.PolicyStatement(
+                    sid="RunHistoryItemOperations",
+                    principals=[iam.AnyPrincipal()],  # required in endpoint policies
+                    actions=[
+                        "dynamodb:GetItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:UpdateItem",
+                        "dynamodb:DeleteItem",
+                    ],
+                    resources=[table_arn],
+                )
+            )
+            dynamodb_endpoint.add_to_policy(
+                iam.PolicyStatement(
+                    sid="RunHistoryListIndexQuery",
+                    principals=[iam.AnyPrincipal()],
+                    actions=["dynamodb:Query"],
+                    resources=[f"{table_arn}/index/{schema.LIST_INDEX}"],
+                )
+            )
             api_service = ApiService(
                 self,
                 "ApiService",

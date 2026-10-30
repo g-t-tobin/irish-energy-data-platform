@@ -565,14 +565,15 @@ def test_alb_may_reach_the_task_port_and_nothing_else(templates):
     assert "SecurityGroupEgress" not in resources(edge, "AWS::EC2::SecurityGroup")[alb]["Properties"]
 
 
-def test_no_nat_no_interface_endpoints_and_one_free_s3_gateway_endpoint(templates):
+def test_no_nat_no_interface_endpoints_and_two_free_gateway_endpoints(templates):
     _, edge = templates
     edge.resource_count_is("AWS::EC2::NatGateway", 0)
     edge.resource_count_is("AWS::EC2::EIP", 0)
-    endpoint = only(edge, "AWS::EC2::VPCEndpoint")["Properties"]
+    endpoints = resources(edge, "AWS::EC2::VPCEndpoint").values()
 
-    assert endpoint["VpcEndpointType"] == "Gateway"
-    assert json.dumps(endpoint["ServiceName"]).endswith('.s3"]]}')
+    assert [e["Properties"]["VpcEndpointType"] for e in endpoints] == ["Gateway", "Gateway"]
+    names = sorted(json.dumps(e["Properties"]["ServiceName"]) for e in endpoints)
+    assert names[0].endswith('.dynamodb"]]}') and names[1].endswith('.s3"]]}')
     subnets = resources(edge, "AWS::EC2::Subnet").values()
     assert all(s["Properties"]["MapPublicIpOnLaunch"] for s in subnets)
 

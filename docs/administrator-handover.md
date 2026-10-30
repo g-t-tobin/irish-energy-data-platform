@@ -54,7 +54,7 @@ or administrator work. Name all new resources with an `irish-energy` prefix.
 | Cognito user pool, public app client (no secret), Hosted UI domain, groups `viewer` and `operator` | manual or new CDK |
 | S3 site bucket, CloudFront distribution, origin access control, response headers policy | CDK exists (`IrishEnergyFrontendStack`) |
 | S3 gateway VPC endpoint | CDK exists (with the service) |
-| DynamoDB gateway VPC endpoint | to write (free; recommended: keeps run-history traffic off the internet) |
+| DynamoDB gateway VPC endpoint with a restrictive endpoint policy | CDK exists (with the service, in `IrishEnergyApiEdgeStack`; Phase 9.3; not deployed or verified against AWS) |
 | Glue database/table, Athena workgroup | CDK exists (`IrishEnergyDataLakeStack`) |
 
 Never create, modify or replace the game's ALB, CloudFront distribution, certificate,
@@ -238,6 +238,51 @@ run-history requests with a generic 503.
 
 Migration: there is nothing to migrate; local SQLite history is development data and
 execution is disabled, so the table starts empty. Rollback is described in section 9.
+
+### DynamoDB gateway endpoint (Phase 9.3)
+
+**Why:** the tasks have no NAT and run in public subnets; without an endpoint their
+DynamoDB calls would travel over the public internet path. A gateway endpoint routes them
+over the AWS network instead, with no NAT gateway.
+
+**Where and for whom:** defined in `IrishEnergyApiEdgeStack` (the stack that owns the VPC),
+next to the existing S3 gateway endpoint, only when the ECS service is included. It is
+attached to the route tables of the two public subnets the ECS service uses (the same two
+the S3 endpoint serves). No new VPC, subnet change, NAT, interface endpoint or change to the
+tasks' public IP.
+
+**Endpoint policy** (one statement, `Principal: "*"` as endpoint policies require; it only
+narrows what the task role may already do):
+
+| | |
+|---|---|
+| Statement `RunHistoryItemOperations` | `dynamodb:GetItem`, `PutItem`, `UpdateItem`, `DeleteItem` on the table ARN only |
+| Statement `RunHistoryListIndexQuery` | `dynamodb:Query` on the `index/gsi1` ARN only |
+| Not allowed | `Scan`, `BatchGetItem`, `BatchWriteItem`, table management (`CreateTable`, `DeleteTable`, `UpdateTable`, `DescribeTable`), `TransactGetItems`, `ConditionCheckItem`, everything else |
+
+These are exactly the operations `src/dynamodb_run_store.py` uses: `get_item`, `update_item`,
+`delete_item`, `query` on `gsi1`, and `transact_write_items` whose items are all Put.
+
+**Transactions and IAM.** DynamoDB has no IAM action named `dynamodb:TransactWriteItems`.
+Per the AWS documentation ("Using IAM with DynamoDB transactions"), permissions for the
+`Put`, `Update`, `Delete` and `Get` items inside a transaction are governed by the
+permissions of the underlying `PutItem`, `UpdateItem`, `DeleteItem` and `GetItem`
+operations; `ConditionCheck` uses `dynamodb:ConditionCheckItem`. The store's transaction
+contains only Put items, so `dynamodb:PutItem` on the table ARN (task role and endpoint
+policy) authorises it; no transaction permission is granted on the index. If the store adds
+Update, Delete or ConditionCheck items, the matching action must be added to both policies
+(`tests/test_dynamodb_transaction_permissions.py` derives the required actions from what the
+store really does and will fail until it is). If the store ever needs another
+operation, the task role and this policy must both be changed and the reason documented.
+The ECS task role is unchanged.
+
+**Cost:** gateway endpoints have no hourly endpoint charge. DynamoDB request and storage
+charges, and any other applicable AWS data-transfer charges, still apply.
+
+**Status:** tested only through local CDK synthesis and offline template tests. It has not
+been deployed and connectivity has not been verified against AWS. After deployment, check
+the endpoint is `available`, associated with both route tables, and that run-history calls
+succeed from a task.
 
 ### Networking decision for the API tasks (no NAT)
 
