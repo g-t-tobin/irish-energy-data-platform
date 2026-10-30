@@ -326,6 +326,37 @@ class DynamoRunStore:
             raise RunStoreError(UNAVAILABLE) from exc
         return [_decode(item) for item in response.get("Items", [])]
 
+    def get_lock(self) -> dict[str, Any] | None:
+        try:
+            item = self._call(
+                "get_item", TableName=self._table, Key=self._lock_key(), ConsistentRead=True
+            ).get("Item")
+        except ClientError as exc:
+            raise RunStoreError(UNAVAILABLE) from exc
+        if not item:
+            return None
+        return {"run_id": item["run_id"]["S"], "lease_expires_at": int(float(item["lease_expires_at"]["N"]))}
+
+    def renew_lock(self, run_id: str) -> bool:
+        """Extend the lease from now; only the owning run can, so another run's lock is never touched."""
+        return self._conditional(
+            "update_item",
+            TableName=self._table,
+            Key=self._lock_key(),
+            UpdateExpression="SET lease_expires_at = :lease",
+            ConditionExpression="run_id = :rid",
+            ExpressionAttributeValues={":lease": _n(int(self._clock() + self._lease)), ":rid": _s(run_id)},
+        )
+
+    def release_lock(self, run_id: str) -> bool:
+        return self._conditional(
+            "delete_item",
+            TableName=self._table,
+            Key=self._lock_key(),
+            ConditionExpression="run_id = :rid",
+            ExpressionAttributeValues={":rid": _s(run_id)},
+        )
+
     def recover_interrupted(self) -> int:
         """Mark active runs whose lease has expired as interrupted.
 

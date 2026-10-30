@@ -306,3 +306,12 @@ objects now carry the run ID in their names, transient EirGrid errors are retrie
 the failure, retry, lock, reconciliation and security scenarios are covered by tests. This is local simulation only:
 nothing has been deployed or run against AWS and pipeline execution remains disabled. See
 `docs/administrator-handover.md` for contracts, findings and known limitations.
+
+## Reconciliation and lock recovery (Phase 9.6.1)
+
+`src/reconciliation.py` settles run history from the real Step Functions status (never interrupting a running execution),
+releases stale locks only for the run that owns them, and the executor refuses to start a run behind an expired lease with a
+live execution. An optional scheduled function (`src/reconcile_runs.py`, `-c reconcilerEnabled=true`, schedule disabled by
+default) can run it independently of the API with minimal permissions. Local tests only: nothing is deployed, the scheduler
+is not created, pipeline execution remains disabled and real AWS behaviour (including Lambda error names) is unverified.
+See `docs/administrator-handover.md`.

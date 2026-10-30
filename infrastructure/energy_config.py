@@ -74,6 +74,16 @@ STATE_MACHINE_ARN = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:{STATE_MACH
 STATE_MACHINE_EXECUTION_ARN_PATTERN = f"arn:aws:states:{REGION}:{ACCOUNT}:execution:{STATE_MACHINE_NAME}:*"
 PIPELINE_FUNCTION_EXPORT = "IrishEnergyPipeline-{label}FunctionArn"  # exported by the pipeline stack
 
+# Optional scheduled reconciler (Phase 9.6.1): absent unless -c reconcilerEnabled=true, and its
+# schedule stays DISABLED unless -c reconcilerScheduleState=ENABLED is also given.
+RECONCILER_ENABLED_CONTEXT = "reconcilerEnabled"
+RECONCILER_SCHEDULE_CONTEXT = "reconcilerScheduleState"
+RECONCILER_FUNCTION_NAME = "irish-energy-run-reconciler"
+RECONCILER_SCHEDULE_NAME = "irish-energy-run-reconciler"
+RECONCILER_RATE_MINUTES = 5
+RECONCILER_TIMEOUT_SECONDS = 60
+RECONCILER_MEMORY_MIB = 256
+
 _IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 _POOL_RE = re.compile(r"^(?P<region>[a-z]{2}(?:-[a-z]+)+-\d)_[A-Za-z0-9]+$")
 _CLIENT_RE = re.compile(r"^[A-Za-z0-9]{10,128}$")
@@ -203,3 +213,21 @@ def load_service_config(get_context: Callable[[str], Any]) -> ApiServiceConfig |
     return ApiServiceConfig(
         image_tag=str(tag), cognito_region=REGION, user_pool_id=str(pool), app_client_id=str(client)
     )
+
+
+@dataclass(frozen=True)
+class ReconcilerConfig:
+    schedule_state: str  # "DISABLED" or "ENABLED"
+
+
+def load_reconciler_config(get_context: Callable[[str], Any]) -> ReconcilerConfig | None:
+    """None (no reconciler stack) unless explicitly enabled; the schedule defaults to DISABLED."""
+    enabled = get_context(RECONCILER_ENABLED_CONTEXT)
+    if enabled is None or str(enabled).lower() == "false":
+        return None
+    if str(enabled).lower() != "true":
+        raise ConfigError(f"{RECONCILER_ENABLED_CONTEXT} must be true or false.")
+    state = str(get_context(RECONCILER_SCHEDULE_CONTEXT) or "DISABLED").upper()
+    if state not in {"DISABLED", "ENABLED"}:
+        raise ConfigError(f"{RECONCILER_SCHEDULE_CONTEXT} must be DISABLED or ENABLED.")
+    return ReconcilerConfig(schedule_state=state)

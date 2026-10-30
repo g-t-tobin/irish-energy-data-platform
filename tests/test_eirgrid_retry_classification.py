@@ -159,3 +159,66 @@ def test_the_worst_case_ingestion_time_fits_inside_the_workflow_and_the_lease():
     other_stages = 300 + 300 + 60  # Silver, Gold, Glue function timeouts (energy_config.PIPELINE_STAGES)
 
     assert ingestion + other_stages < schema.STATE_MACHINE_TIMEOUT_SECONDS < schema.LOCK_LEASE_SECONDS
+
+
+# -- the exact error names Step Functions sees --------------------------------------------------------
+# Python's Lambda runtime client reports errorType = the exception class's __name__ (unqualified),
+# and Step Functions matches ErrorEquals against that name for the Lambda invoke integration (the AWS
+# "Handling error conditions" tutorial catches a Lambda-thrown CustomError by name). Verified only
+# locally and against documentation; the real Lambda and Step Functions behaviour is still unverified.
+
+LAMBDA_SERVICE_ERRORS = [
+    "Lambda.ClientExecutionTimeoutException",
+    "Lambda.ServiceException",
+    "Lambda.AWSLambdaException",
+    "Lambda.SdkClientException",
+    "Lambda.TooManyRequestsException",
+]
+
+
+def test_the_custom_error_reports_exactly_the_name_the_state_machine_retries():
+    exc = TransientEirGridError("x")
+
+    assert type(exc).__name__ == "TransientEirGridError" == type(exc).__qualname__  # not nested, not qualified
+    assert spec.TRANSIENT_SOURCE_ERRORS == ["TransientEirGridError"]
+    assert not type(exc).__name__.startswith("States.") and type(exc).__name__.isidentifier()
+
+
+def test_the_synthesised_ingestion_retriers_are_exactly_the_documented_names(pipeline):
+    bronze = pipeline.definition["States"]["Bronze"]
+
+    assert [r["ErrorEquals"] for r in bronze["Retry"]] == [LAMBDA_SERVICE_ERRORS, ["TransientEirGridError"]]
+    assert [(r["IntervalSeconds"], r["MaxAttempts"], r["BackoffRate"]) for r in bronze["Retry"]] == [
+        (5, 2, 2.0), (10, 3, 2.0)]  # the 10 s, 20 s and 40 s ingestion schedule is unchanged
+
+
+@pytest.mark.parametrize("stage", ["Silver", "Gold", "GlueRegistration"])
+def test_other_stages_retry_only_lambda_service_errors(pipeline, stage):
+    assert [r["ErrorEquals"] for r in pipeline.definition["States"][stage]["Retry"]] == [LAMBDA_SERVICE_ERRORS]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ValueError("bad body"), KeyError("Rows"), requests.exceptions.JSONDecodeError("x", "doc", 0),
+     requests.HTTPError("404"), requests.exceptions.SSLError("cert"), requests.exceptions.InvalidURL("u")],
+    ids=lambda e: type(e).__name__,
+)
+def test_no_other_exception_type_is_retried_by_the_ingestion_state(pipeline, error):
+    run_id = pipeline.new_run()
+    pipeline.fail("bronze", error)
+
+    result, execution = pipeline.execute(run_id)
+
+    assert result["status"] == "FAILED" and execution.invocations["Bronze"] == 1 and execution.waits == {}
+
+
+def test_the_python_runtime_client_agrees_when_it_is_installed():
+    bootstrap = pytest.importorskip("awslambdaric.bootstrap")
+    try:
+        raise TransientEirGridError("x")
+    except TransientEirGridError:
+        import sys
+
+        fault = bootstrap.build_fault_result(sys.exc_info(), None)
+
+    assert fault["errorType"] == "TransientEirGridError"

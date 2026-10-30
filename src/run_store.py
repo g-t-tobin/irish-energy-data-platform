@@ -100,6 +100,18 @@ class RunHistory(Protocol):
 
     def recover_interrupted(self) -> int: ...
 
+    def get_lock(self) -> dict[str, Any] | None:
+        """The active-run lock as {"run_id", "lease_expires_at"}, or None."""
+        ...
+
+    def renew_lock(self, run_id: str) -> bool:
+        """Extend the lease, only if run_id still owns the lock."""
+        ...
+
+    def release_lock(self, run_id: str) -> bool:
+        """Delete the lock, only if run_id owns it; False when it is absent or another run's."""
+        ...
+
 
 def validate_create_args(days_back: Any, idempotency_key: str | None) -> None:
     if isinstance(days_back, bool) or not isinstance(days_back, int):
@@ -328,6 +340,16 @@ class RunStore:
         except sqlite3.Error as exc:
             raise RunStoreError("Run history storage is unavailable.") from exc
         return [_to_dict(row) for row in rows]
+
+    # One process owns this database and "active" is a status, so there is no separate lock.
+    def get_lock(self) -> dict[str, Any] | None:
+        return None
+
+    def renew_lock(self, run_id: str) -> bool:
+        return False
+
+    def release_lock(self, run_id: str) -> bool:
+        return False
 
     def recover_interrupted(self) -> int:
         """Mark runs left queued/running by a previous process as interrupted.

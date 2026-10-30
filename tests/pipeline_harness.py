@@ -213,8 +213,8 @@ class Pipeline:
             code,
         )
 
-    def fail_lock_release(self) -> None:
-        self.fail_ddb("delete_item", lambda kw: kw["Key"] == LOCK_KEY)
+    def fail_lock_release(self):
+        return self.fail_ddb("delete_item", lambda kw: kw["Key"] == LOCK_KEY)
 
     # -- running ------------------------------------------------------------------------
 

@@ -17,12 +17,12 @@ from tests.test_energy_pipeline_infrastructure import EXPECTED
 pipeline = make_pipeline_fixture()
 CTX = {
     "apiCertificateArn": API_CERT, "frontendCertificateArn": FRONTEND_CERT, "apiImageTag": "abc1234",
-    "cognitoUserPoolId": "eu-west-1_ABCDEFGHI", "cognitoAppClientId": "1234567890abcdefghijklmnop",
+    "cognitoUserPoolId": "eu-west-1_ABCDEFGHI", "cognitoAppClientId": "1234567890abcdefghijklmnop", "reconcilerEnabled": "true",
 }
 ACCOUNT_BUCKET = f"arn:aws:s3:::{DATA_LAKE_BUCKET}"
 LABELS = {"bronze": "Bronze", "silver": "Silver", "gold": "Gold", "glue_registration": "GlueRegistration"}
 ALLOWED_DYNAMODB = {"dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query"}
-CHECKED = ("ApiRegistry", "RunHistory", "Pipeline", "Workflow", "ApiEdge")
+CHECKED = ("ApiRegistry", "RunHistory", "Pipeline", "Workflow", "ApiEdge", "Reconciler")
 
 
 @pytest.fixture(scope="module")
@@ -102,6 +102,15 @@ def test_the_api_task_role_can_start_and_describe_only_this_state_machine(templa
     assert [s["Sid"] for s in statements] == [
         "ListGoldPrefixOnly", "ReadGoldObjectsOnly", "RunHistoryItems", "RunHistoryListIndex",
         "StartAndInspectOneStateMachine", "ReconcileOwnExecutions"]
+
+
+def test_only_the_workflow_and_the_api_can_start_executions_and_the_reconciler_can_only_describe(templates):
+    starters = {stack for stack in CHECKED for _, ss in policies(templates[stack]) for s in ss
+                if any("StartExecution" in a for a in as_list(s["Action"]))}
+    reconciler = [s for _, ss in policies(templates["Reconciler"]) for s in ss]
+
+    assert starters == {"ApiEdge"}  # the workflow stack's role only invokes Lambda and writes DynamoDB
+    assert {a for s in reconciler for a in as_list(s["Action"]) if a.startswith("states:")} == {"states:DescribeExecution"}
 
 
 def test_no_role_other_than_the_workflow_and_the_api_can_use_step_functions_or_lambda(templates):

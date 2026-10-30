@@ -10,11 +10,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import aws_cdk as cdk  # noqa: E402
 
-from energy_config import ACCOUNT, REGION, ConfigError, load_edge_config, load_service_config  # noqa: E402
+from energy_config import (  # noqa: E402
+    ACCOUNT,
+    REGION,
+    ConfigError,
+    load_edge_config,
+    load_reconciler_config,
+    load_service_config,
+)
 from stacks.data_lake_stack import DataLakeStack  # noqa: E402
 from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
 from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
 from stacks.energy_workflow_stack import EnergyWorkflowStack  # noqa: E402
+from stacks.energy_reconciler_stack import EnergyReconcilerStack
 from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
 from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  # noqa: E402
 
@@ -38,6 +46,7 @@ DataLakeStack(
 try:
     edge = load_edge_config(app.node.try_get_context, os.environ)
     service = load_service_config(app.node.try_get_context)
+    reconciler = load_reconciler_config(app.node.try_get_context)
     if service is not None and edge is None:
         raise ConfigError("The API service needs both certificate ARNs (edge stack) as well.")
 except ConfigError as error:
@@ -72,6 +81,16 @@ workflow = EnergyWorkflowStack(
     pipeline_stack=pipeline,
     env=cdk.Environment(account=ACCOUNT, region=REGION),
 )
+
+# Optional (-c reconcilerEnabled=true): the scheduled reconciler; its schedule is DISABLED by default.
+if reconciler is not None:
+    EnergyReconcilerStack(
+        app,
+        "IrishEnergyReconcilerStack",
+        config=reconciler,
+        table=run_history.table,
+        env=cdk.Environment(account=ACCOUNT, region=REGION),
+    )
 
 # Edge stacks are independent of the game and need both certificate ARNs
 # (-c apiCertificateArn=... -c frontendCertificateArn=...); otherwise they are skipped.

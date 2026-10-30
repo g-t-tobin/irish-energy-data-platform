@@ -210,3 +210,17 @@ cleanup of orphaned Bronze and Silver objects. Security checks over the real syn
 change: Lambda roles separate, the state machine role limited to the four stages and the table, the API role
 limited to one state machine, no Scan, Batch or table-management permissions, no wildcard resources except the ECR
 token, execution disabled.
+
+## Phase 9.6.1 update
+
+Added local, test-double-verified reconciliation and lock recovery: one shared `reconcile` (execution status decides;
+running executions keep their lock and have the lease renewed; finished runs are settled and their locks released by the
+owning run only; unknown or unqueryable executions change nothing), an executor check that stops a new run starting
+behind an expired lease with a live execution, and an optional scheduled reconciler function with its own minimal role
+(`states:DescribeExecution` on one state machine, item reads, updates and deletes on the run-history table and `Query` on
+its index; no start, put, S3, Glue or other permission). The schedule is not created: the stack is synthesised only with
+`-c reconcilerEnabled=true` and the schedule is DISABLED unless separately enabled. The retry error name
+`TransientEirGridError` was checked against the Python runtime client and AWS documentation and left unchanged; real AWS
+behaviour (including a possible `Lambda.Unknown`) is unverified. Structured logs and EMF metrics are defined; alarms are
+proposed only. Execution remains disabled, the lease (45 min) and workflow timeout (30 min) are unchanged and the Gold policy
+is unchanged. Nothing was deployed or run against AWS.

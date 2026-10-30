@@ -232,7 +232,7 @@ def test_an_api_process_dying_after_start_execution_does_not_disturb_the_running
     assert pipeline.lock() is None
 
 
-def test_a_restart_after_the_lease_expired_cannot_overwrite_the_real_outcome(pipeline):
+def test_a_restart_after_the_lease_expired_lets_the_real_outcome_replace_the_interrupted_guess(pipeline):
     client = LocalStepFunctions(pipeline, defer=True)
     run_id = client.executor().start(2)["run_id"]
     pipeline.clock.advance(LEASE + 1)
@@ -241,9 +241,9 @@ def test_a_restart_after_the_lease_expired_cannot_overwrite_the_real_outcome(pip
     assert restarted.recover_interrupted() == 1  # a guess: the outcome is unknown
     assert restarted.get_run(run_id)["status"] == "interrupted"
     client.executions[run_id]["status"] = "SUCCEEDED"
-    reconcile_active_runs(restarted, client, STATE_MACHINE_ARN)  # interrupted is not active: left alone
+    reconcile_active_runs(restarted, client, STATE_MACHINE_ARN)
 
-    assert restarted.get_run(run_id)["status"] == "interrupted"  # known limitation, see the handover document
+    assert restarted.get_run(run_id)["status"] == "succeeded"  # Phase 9.6.1: interrupted runs are re-checked
 
 
 def test_an_execution_that_failed_before_it_could_record_anything_is_settled_by_reconciliation(pipeline):

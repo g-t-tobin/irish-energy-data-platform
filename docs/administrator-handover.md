@@ -609,16 +609,15 @@ redrive, never sleeps (delays are recorded), and treats an unresolvable path as 
 `test_pipeline_idempotency`, `test_eirgrid_retry_classification`, `test_step_functions_failure_simulation`,
 `test_run_history_reliability`, `test_executor_integration`, `test_pipeline_security_regression`.
 
-### Known limitations (not changed; no safe fix inside the existing contracts)
+### Known limitations (Phase 9.6; items marked "9.6.1" are addressed in the next section)
 
-- A successful workflow whose final lock release fails leaves the finished run holding the lock; new runs are
-  refused with "already active" until the 45-minute lease expires.
-- A `States.Runtime` failure (for example a stage returning no `key`) ends the execution without marking the
-  run; it stays active until `reconcile_active_runs` runs, which nothing schedules yet.
+- 9.6.1: a successful workflow whose final lock release fails leaves the finished run holding the lock; the
+  reconciler now releases it once the execution is over (otherwise new runs are refused until the lease expires).
+- 9.6.1: a `States.Runtime` failure ends the execution without marking the run; the reconciler settles it
+  (needs the reconciler to run: scheduled, once separately approved).
 - If the record of the Gold key cannot be written, the run is `partial_failure` without a `gold_key`, so the
   registration command needs the key found by hand (`gold/eirgrid/daily_demand/run_date=<date>/`).
-- `reconcile_active_runs` ignores runs already marked `interrupted`, so a late `SUCCEEDED` outcome does not
-  overwrite a restart's guess (cannot happen inside the lease: the workflow limit is 30 minutes).
+- 9.6.1: runs marked `interrupted` are now re-checked for 24 hours, so the real outcome replaces a restart's guess.
 - The workflow does not renew the lock lease; this is safe only while the workflow limit stays below the lease.
 - Failed attempts and failed runs leave Bronze and Silver objects behind; Bronze and Silver have no retention rule.
 - Workflow timestamps end in `Z` and the store's in `+00:00`.
@@ -631,3 +630,112 @@ redrive, never sleeps (delays are recorded), and treats an unresolvable path as 
 Everything in the Phase 9.4 and 9.5 sections: bootstrap and deployment, image publication, administrator
 confirmation of Glue and Step Functions permissions, a supervised test run, logging and alarms, scheduling the
 reconciler, and a separate reviewed change to activate execution.
+
+## Automatic reconciliation and lock recovery (Phase 9.6.1)
+
+**Local only: designed, implemented and tested against test doubles. Nothing was deployed or run against AWS, and
+pipeline execution is still disabled (`PIPELINE_EXECUTION_ENABLED=true` still stops start-up). The scheduler is not
+created and, when synthesised at all, is DISABLED.**
+
+### Design
+
+`src/reconciliation.py` (`reconcile`, `reconcile_run`) is the one implementation. It is used by the API-side
+`reconcile_active_runs` / `StepFunctionsExecutor` and by the scheduled function `src/reconcile_runs.py`. It only calls
+`DescribeExecution` and conditional writes on the run-history table; it never starts an execution and touches no S3,
+Glue or Athena.
+
+Each pass reads the lock and the 50 newest runs, then checks every active run, every run marked `interrupted` in the last
+24 hours, and the run that holds the lock (even if old). The execution is found by name (the run ID), so no execution ARN
+is stored. The execution status decides:
+
+| Execution | Run record | Action |
+|---|---|---|
+| `RUNNING` / `PENDING_REDRIVE` | active | never interrupted; the lease is renewed (conditional on owning the lock) when under 20 minutes remain |
+| `RUNNING` | already final, still holds lock | nothing (the workflow is releasing it) |
+| `SUCCEEDED` | active or `interrupted` | `succeeded`, stage `completed`; the terminal update releases the lock |
+| `FAILED` / `TIMED_OUT` | active or `interrupted` | `failed` (`partial_failure` if a `gold_key` was recorded), error code `INTERNAL_ERROR` |
+| `ABORTED` | active | `interrupted` |
+| any finished status | already final, holds lock | lock released (owner-conditioned delete) |
+| does not exist | active | unchanged for 5 minutes after creation, then `interrupted` |
+| does not exist | final or `interrupted`, holds lock | lock released |
+| query fails (throttling, permission, network) | any | nothing changes; counted as an error |
+| a status the code does not know | any | nothing changes |
+
+A pass never changes `requested_by`, `days_back`, the idempotency record, the listing keys or other run data, and the public
+run format is unchanged. Repeating or running passes concurrently is safe because every write is conditional (tested with 6
+concurrent passes).
+
+### Lock recovery
+
+| Situation | Behaviour |
+|---|---|
+| Final lock release failed after success or failure | the next pass sees a final run still holding the lock with a finished execution and releases it |
+| Lease expired, execution still running | the lease is renewed; a new run is refused (`StepFunctionsExecutor` checks the holder before `create_run` and refuses unless the old run is provably over) |
+| Lease expired, execution finished | the old run is settled, the lock released and the new run starts |
+| Lease expired, execution missing | treated as above after the 5-minute grace period |
+| Execution cannot be queried | nothing changes and a new run is refused (fail safe) |
+| Another run's lock | `release_lock` and `renew_lock` are conditioned on the lock's `run_id`, so one run can never release or renew another's |
+
+The 45-minute lease and 30-minute workflow timeout are unchanged: the workflow can never legitimately outlive its lease,
+and renewal while `RUNNING` covers any future change. Limits: callers that use the store directly (not the executor)
+bypass the expired-lock check, and a lease that expires in the instant between the check and `create_run` is only safe
+because an execution cannot outlive its lease. Making the API call the reconciler at start-up (instead of
+`recover_interrupted`, which looks at leases only) is part of the activation change, not done here.
+
+### Scheduled reconciliation (optional, off by default)
+
+`EnergyReconcilerStack` is synthesised only with `-c reconcilerEnabled=true`: one zip-packaged Python 3.13 function (256 MiB,
+60 s, source only), its 30-day log group, and an EventBridge Scheduler schedule `rate(5 minutes)` with `State: DISABLED`
+unless `-c reconcilerScheduleState=ENABLED` is also given (no retries, event age 60 s). Not deployed; deploying it needs the
+CDK bootstrap bucket for the zip.
+
+Minimum permissions (function role): `logs:CreateLogStream` and `PutLogEvents` on its own log group;
+`states:DescribeExecution` on `arn:aws:states:eu-west-1:851725545966:execution:irish-energy-pipeline:*`;
+`dynamodb:GetItem`, `UpdateItem`, `DeleteItem` on the run-history table ARN and `dynamodb:Query` on its `gsi1` index ARN.
+Nothing else: no `StartExecution`, `PutItem`, transactions, `Scan`, S3, Glue, Athena, Cognito, IAM, ECS or wildcard
+resources. The scheduler's role (trusted by `scheduler.amazonaws.com`, account-conditioned) can only
+`lambda:InvokeFunction` on that one function. A test runs every reconciler path and checks the operations used equal the
+actions granted.
+
+### Lambda error names for retries
+
+The ingestion retrier matches `TransientEirGridError`. Conclusion: no change was needed.
+- Python's Lambda runtime client builds the error from `type(exc).__name__`, the unqualified class name. Checked locally in
+  the Phase 9.4 image (`awslambdaric.bootstrap.build_fault_result` returns `errorType: TransientEirGridError`), without
+  invoking any function.
+- The AWS Step Functions tutorial "Handling error conditions in a Step Functions state machine" catches a Lambda-thrown
+  custom error through `arn:aws:states:::lambda:invoke` with `ErrorEquals: ["CustomError"]` and retries it alongside the
+  `Lambda.*` service errors. The best-practices page lists `Lambda.ClientExecutionTimeoutException`,
+  `Lambda.ServiceException`, `Lambda.AWSLambdaException` and `Lambda.SdkClientException` (plus `Lambda.TooManyRequestsException`
+  per the error-names page), which is exactly the service-error retrier here.
+- **Not verified on AWS.** The tutorial shows a Node.js function, not Python, and the error-names page says unhandled
+  Lambda errors were historically reported as `Lambda.Unknown` (timeouts as `Sandbox.Timedout`). If a real execution
+  reports `Lambda.Unknown` for this exception, the retrier would not match and ingestion would fail without retrying; that
+  fails safe. `Lambda.Unknown` is deliberately not retried because it would also retry permanent errors. Confirm with one
+  supervised execution that injects a transient failure.
+- Non-retryable by design and by test: invalid input, other HTTP 4xx, TLS errors, bad or unexpected bodies, `Lambda.Unknown`,
+  `Sandbox.Timedout`, `States.TaskFailed`. The 10 s, 20 s, 40 s schedule is unchanged.
+
+### Operational monitoring (minimum)
+
+The reconciler logs one JSON line per action (`reconcile.run`: run ID, statuses, stale flag, error class) and one summary
+line in CloudWatch Embedded Metric Format (`IrishEnergy/Reconciler`, no dimensions: `RunsChecked`, `StaleActiveRuns`,
+`RunsSettled`, `RunsInterrupted`, `LeasesRenewed`, `LocksReleased`, `RunsUnchanged`, `ReconcileErrors`, `DurationMs`;
+failures log `reconcile.failed` with `ReconcileFailures`). Logs hold no messages, payloads, tokens or credentials. No alarms
+or other resources were added; proposed alarms (to create separately):
+
+| Need | Source (no new permissions) | Proposed alarm |
+|---|---|---|
+| Runs stuck active | `StaleActiveRuns` | greater than 0 for 2 periods |
+| Reconciliation not running or failing | `ReconcileFailures`, `ReconcileErrors`, no data on `RunsChecked` | any failure; missing data |
+| Stuck locks | `LocksReleased` | any value (a release failed in the workflow) |
+| Execution failures | `AWS/States` `ExecutionsFailed`, `ExecutionsTimedOut`, `ExecutionsAborted` | greater than 0 |
+| Ingestion retries | Step Functions history; Lambda `Errors` for `irish-energy-pipeline-bronze` | errors repeated |
+| Glue registration failures | Lambda `Errors` for the Glue function; runs in `partial_failure` | any |
+| Start or lock failures | API logs (`ExecutionStartError`, `ActiveRunError`) | log metric filter |
+
+### Not verified on AWS
+
+EventBridge Scheduler delivery and permissions, the zip deployment, `DescribeExecution` behaviour and rates, real Lambda error
+names, EMF ingestion, and every IAM statement above. Remaining prerequisites: those of Phases 9.4 to 9.6, plus approval to
+synthesise and deploy the reconciler, and the activation change (API calls the reconciler at start-up).
