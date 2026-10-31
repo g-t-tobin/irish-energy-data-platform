@@ -105,16 +105,22 @@ def test_repository_is_dedicated_scanned_encrypted_immutable_and_retained(templa
     assert props["RepositoryName"] == "irish-energy-api"
     assert props["ImageScanningConfiguration"] == {"ScanOnPush": True}
     # AES-256 is ECR's default at-rest encryption, so CDK emits no explicit block; no KMS key is created.
-    assert props.get("EncryptionConfiguration", {"EncryptionType": "AES256"}) == {"EncryptionType": "AES256"}
+    assert props.get("EncryptionConfiguration", {"EncryptionType": "AES256"}) == {
+        "EncryptionType": "AES256"
+    }
     assert props["ImageTagMutability"] == "IMMUTABLE"
     assert repo["DeletionPolicy"] == "Retain"
-    assert "RepositoryPolicyText" not in props  # no resource policy, so no wildcard principal
+    assert (
+        "RepositoryPolicyText" not in props
+    )  # no resource policy, so no wildcard principal
 
 
 def test_lifecycle_removes_old_untagged_images_and_caps_the_rest(templates):
     registry, _ = templates
     policy = json.loads(
-        only(registry, "AWS::ECR::Repository")["Properties"]["LifecyclePolicy"]["LifecyclePolicyText"]
+        only(registry, "AWS::ECR::Repository")["Properties"]["LifecyclePolicy"][
+            "LifecyclePolicyText"
+        ]
     )
 
     rules = {rule["rulePriority"]: rule for rule in policy["rules"]}
@@ -132,7 +138,9 @@ def test_lifecycle_removes_old_untagged_images_and_caps_the_rest(templates):
 def test_registry_stack_contains_only_the_repository(templates):
     registry, _ = templates
 
-    assert {r["Type"] for r in registry.to_json()["Resources"].values()} == {"AWS::ECR::Repository"}
+    assert {r["Type"] for r in registry.to_json()["Resources"].values()} == {
+        "AWS::ECR::Repository"
+    }
 
 
 # ECS cluster, task definition, service
@@ -143,7 +151,8 @@ def test_cluster_has_no_paid_container_insights(templates):
 
     edge.resource_count_is("AWS::ECS::Cluster", 1)
     edge.has_resource_properties(
-        "AWS::ECS::Cluster", {"ClusterSettings": [{"Name": "containerInsights", "Value": "disabled"}]}
+        "AWS::ECS::Cluster",
+        {"ClusterSettings": [{"Name": "containerInsights", "Value": "disabled"}]},
     )
 
 
@@ -157,7 +166,10 @@ def test_task_definition_is_fargate_x86_with_the_configured_size(templates):
             "Memory": "1024",
             "NetworkMode": "awsvpc",
             "RequiresCompatibilities": ["FARGATE"],
-            "RuntimePlatform": {"CpuArchitecture": "X86_64", "OperatingSystemFamily": "LINUX"},
+            "RuntimePlatform": {
+                "CpuArchitecture": "X86_64",
+                "OperatingSystemFamily": "LINUX",
+            },
             "Volumes": [{"Name": "tmp"}],
         },
     )
@@ -171,7 +183,9 @@ def test_container_is_hardened_and_uses_the_pinned_image_tag(templates):
     assert api["User"] == "10001:10001"
     assert api["ReadonlyRootFilesystem"] is True
     assert api["PortMappings"] == [{"ContainerPort": 8000, "Protocol": "tcp"}]
-    assert api["MountPoints"] == [{"ContainerPath": "/tmp", "ReadOnly": False, "SourceVolume": "tmp"}]
+    assert api["MountPoints"] == [
+        {"ContainerPath": "/tmp", "ReadOnly": False, "SourceVolume": "tmp"}
+    ]
     assert api["LinuxParameters"]["Capabilities"] == {"Drop": ["ALL"]}
     assert api["LinuxParameters"]["InitProcessEnabled"] is True
     assert api["StopTimeout"] == 30
@@ -186,7 +200,12 @@ def test_container_health_check_matches_the_dockerfile_and_the_target_group(temp
     dockerfile = (REPO / "Dockerfile").read_text()
 
     assert check["Command"] == ["CMD", "python", "-m", "src.healthcheck"]
-    assert (check["Interval"], check["Timeout"], check["Retries"], check["StartPeriod"]) == (30, 5, 3, 30)
+    assert (
+        check["Interval"],
+        check["Timeout"],
+        check["Retries"],
+        check["StartPeriod"],
+    ) == (30, 5, 3, 30)
     assert '"python", "-m", "src.healthcheck"' in dockerfile
     target_group = only(edge, "AWS::ElasticLoadBalancingV2::TargetGroup")["Properties"]
     assert target_group["HealthCheckPath"] == SERVICE.health_check_path == "/health"
@@ -223,7 +242,9 @@ def test_service_settings(templates):
             "NetworkConfiguration": {
                 "AwsvpcConfiguration": Match.object_like({"AssignPublicIp": "ENABLED"})
             },
-            "LoadBalancers": [Match.object_like({"ContainerName": "api", "ContainerPort": 8000})],
+            "LoadBalancers": [
+                Match.object_like({"ContainerName": "api", "ContainerPort": 8000})
+            ],
         },
     )
     service = only(edge, "AWS::ECS::Service")["Properties"]
@@ -237,11 +258,15 @@ def environment(template):
     return {item["Name"]: item["Value"] for item in container(template)["Environment"]}
 
 
-def test_environment_is_explicit_and_contains_no_credentials_or_execution_switch(templates):
+def test_environment_is_explicit_and_execution_is_disabled_by_default(templates):
     _, edge = templates
     env = environment(edge)
 
-    assert {k: v for k, v in env.items() if k not in ("FORWARDED_ALLOW_IPS", "RUN_HISTORY_TABLE")} == {
+    assert {
+        k: v
+        for k, v in env.items()
+        if k not in ("FORWARDED_ALLOW_IPS", "RUN_HISTORY_TABLE")
+    } == {
         "API_ENV": "production",
         "PORT": "8000",
         "HEALTH_CHECK_PATH": "/health",
@@ -253,19 +278,24 @@ def test_environment_is_explicit_and_contains_no_credentials_or_execution_switch
         "S3_BUCKET": "irish-energy-data-platform-851725545966",
         "RUN_HISTORY_BACKEND": "dynamodb",
         "RUN_HISTORY_REGION": "eu-west-1",
-        "PIPELINE_STATE_MACHINE_ARN": STATE_MACHINE_ARN,  # dormant: nothing reads it while execution is off
+        "PIPELINE_STATE_MACHINE_ARN": STATE_MACHINE_ARN,
+        "PIPELINE_EXECUTION_ENABLED": "false",
     }
     assert "RUN_HISTORY_DB_PATH" not in env  # no SQLite configuration in production
-    assert "irish-energy-run-history" in json.dumps(env["RUN_HISTORY_TABLE"]) or "ImportValue" in json.dumps(
+    assert "irish-energy-run-history" in json.dumps(
         env["RUN_HISTORY_TABLE"]
-    )
-    assert "Fn::GetAtt" in json.dumps(env["FORWARDED_ALLOW_IPS"])  # the VPC CIDR, not "*"
+    ) or "ImportValue" in json.dumps(env["RUN_HISTORY_TABLE"])
+    assert "Fn::GetAtt" in json.dumps(
+        env["FORWARDED_ALLOW_IPS"]
+    )  # the VPC CIDR, not "*"
     flat = json.dumps(env).upper()
-    for forbidden in ("ACCESS_KEY", "SECRET", "SESSION_TOKEN", "PIPELINE_EXECUTION", "ENABLE_API_DOCS"):
+    for forbidden in ("ACCESS_KEY", "SECRET", "SESSION_TOKEN", "ENABLE_API_DOCS"):
         assert forbidden not in flat
 
 
-def test_deployed_environment_is_valid_production_config_with_execution_disabled(templates):
+def test_deployed_environment_is_valid_production_config_with_execution_disabled(
+    templates,
+):
     _, edge = templates
     env = {
         **environment(edge),
@@ -273,13 +303,20 @@ def test_deployed_environment_is_valid_production_config_with_execution_disabled
         "RUN_HISTORY_TABLE": "irish-energy-run-history",  # a cross-stack reference in the template
     }
 
-    settings = load_settings(env)  # raises if production config were incomplete or unsafe
+    settings = load_settings(
+        env
+    )  # raises if production config were incomplete or unsafe
 
     assert settings.api_env == "production"
-    assert settings.cognito is not None and settings.cognito.client_id == "testclientid1234567890"
+    assert (
+        settings.cognito is not None
+        and settings.cognito.client_id == "testclientid1234567890"
+    )
     assert settings.pipeline_execution_enabled is False
     assert settings.enable_api_docs is False
-    assert settings.cors_allowed_origins == ("https://energy.ai-autofy-general-server.com",)
+    assert settings.cors_allowed_origins == (
+        "https://energy.ai-autofy-general-server.com",
+    )
     assert settings.run_history.backend == "dynamodb"
     assert settings.run_history.region == "eu-west-1"
 
@@ -302,7 +339,9 @@ def test_secrets_manager_secrets_are_granted_to_the_execution_role_only_by_exact
         )
     )
 
-    assert container(edge)["Secrets"] == [{"Name": "EXAMPLE_SETTING", "ValueFrom": SECRET_ARN}]
+    assert container(edge)["Secrets"] == [
+        {"Name": "EXAMPLE_SETTING", "ValueFrom": SECRET_ARN}
+    ]
     grants = [
         (policy_name, statement)
         for policy_name, policy in resources(edge, "AWS::IAM::Policy").items()
@@ -313,7 +352,11 @@ def test_secrets_manager_secrets_are_granted_to_the_execution_role_only_by_exact
     assert grants[0][1]["Resource"] == SECRET_ARN
     assert SECRET_ARN not in json.dumps(resources(edge, "AWS::IAM::Role"))
     assert "secretsmanager" not in json.dumps(
-        next(p for n, p in resources(edge, "AWS::IAM::Policy").items() if n.startswith("ApiServiceTaskRole"))
+        next(
+            p
+            for n, p in resources(edge, "AWS::IAM::Policy").items()
+            if n.startswith("ApiServiceTaskRole")
+        )
     )
 
 
@@ -328,7 +371,13 @@ def test_secrets_manager_secrets_are_granted_to_the_execution_role_only_by_exact
 )
 def test_foreign_or_wildcard_secret_arns_are_rejected(arn):
     with pytest.raises(ConfigError):
-        ApiServiceConfig(image_tag="v1", cognito_region="eu-west-1", user_pool_id="p", app_client_id="c", secret_arns=(("X", arn),))
+        ApiServiceConfig(
+            image_tag="v1",
+            cognito_region="eu-west-1",
+            user_pool_id="p",
+            app_client_id="c",
+            secret_arns=(("X", arn),),
+        )
 
 
 # IAM
@@ -338,7 +387,10 @@ def test_two_separate_roles_trusted_by_ecs_tasks_for_this_account_only(templates
     _, edge = templates
     roles = resources(edge, "AWS::IAM::Role")
 
-    assert sorted(n[:-8] for n in roles) == ["ApiServiceExecutionRole", "ApiServiceTaskRole"]
+    assert sorted(n[:-8] for n in roles) == [
+        "ApiServiceExecutionRole",
+        "ApiServiceTaskRole",
+    ]
     for role in roles.values():
         assert role["Properties"]["AssumeRolePolicyDocument"]["Statement"] == [
             {
@@ -355,7 +407,11 @@ def test_two_separate_roles_trusted_by_ecs_tasks_for_this_account_only(templates
 
 
 def policy_for(template, prefix):
-    matches = [p for n, p in resources(template, "AWS::IAM::Policy").items() if n.startswith(prefix)]
+    matches = [
+        p
+        for n, p in resources(template, "AWS::IAM::Policy").items()
+        if n.startswith(prefix)
+    ]
     assert len(matches) == 1
     return matches[0]["Properties"]["PolicyDocument"]["Statement"]
 
@@ -366,7 +422,11 @@ def test_execution_role_can_only_pull_the_image_and_write_its_logs(templates):
 
     by_action = {tuple(as_list(s["Action"])): s for s in statements}
     assert set(by_action) == {
-        ("ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"),
+        (
+            "ecr:BatchCheckLayerAvailability",
+            "ecr:GetDownloadUrlForLayer",
+            "ecr:BatchGetImage",
+        ),
         ("ecr:GetAuthorizationToken",),
         ("logs:CreateLogStream", "logs:PutLogEvents"),
     }
@@ -375,10 +435,14 @@ def test_execution_role_can_only_pull_the_image_and_write_its_logs(templates):
     assert by_action[("logs:CreateLogStream", "logs:PutLogEvents")]["Resource"] != "*"
 
 
-TABLE_ARN_IMPORT = "IrishEnergyRunHistoryStack:ExportsOutputFnGetAttRunHistoryTableFD4DA44DArn6CF8D0FC"
+TABLE_ARN_IMPORT = (
+    "IrishEnergyRunHistoryStack:ExportsOutputFnGetAttRunHistoryTableFD4DA44DArn6CF8D0FC"
+)
 
 
-def test_application_role_has_exactly_the_gold_read_and_run_history_permissions(templates):
+def test_application_role_has_exactly_the_gold_read_and_run_history_permissions(
+    templates,
+):
     _, edge = templates
     statements = policy_for(edge, "ApiServiceTaskRole")
 
@@ -399,28 +463,46 @@ def test_application_role_has_exactly_the_gold_read_and_run_history_permissions(
         {
             "Sid": "RunHistoryItems",
             "Effect": "Allow",
-            "Action": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"],
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+            ],
             "Resource": {"Fn::ImportValue": TABLE_ARN_IMPORT},
         },
         {
             "Sid": "RunHistoryListIndex",
             "Effect": "Allow",
             "Action": "dynamodb:Query",
-            "Resource": {"Fn::Join": ["", [{"Fn::ImportValue": TABLE_ARN_IMPORT}, "/index/gsi1"]]},
-        },
-        {
-            "Sid": "StartAndInspectOneStateMachine",
-            "Effect": "Allow",
-            "Action": "states:StartExecution",
-            "Resource": STATE_MACHINE_ARN,
+            "Resource": {
+                "Fn::Join": ["", [{"Fn::ImportValue": TABLE_ARN_IMPORT}, "/index/gsi1"]]
+            },
         },
         {
             "Sid": "ReconcileOwnExecutions",
             "Effect": "Allow",
             "Action": "states:DescribeExecution",
-            "Resource": STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:") + ":*",
+            "Resource": STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:")
+            + ":*",
         },
     ]
+
+
+def test_api_role_gets_start_execution_only_when_explicitly_enabled():
+    enabled_service = ApiServiceConfig(
+        image_tag="v0.1.0",
+        cognito_region="eu-west-1",
+        user_pool_id="eu-west-1_TestPool1",
+        app_client_id="testclientid1234567890",
+        pipeline_execution_enabled=True,
+    )
+    _, edge = synth(service=enabled_service)
+    statements = policy_for(edge, "ApiServiceTaskRole")
+    start = [s for s in statements if s.get("Sid") == "StartAndInspectOneStateMachine"]
+    assert len(start) == 1
+    assert start[0]["Action"] == "states:StartExecution"
+    assert start[0]["Resource"] == STATE_MACHINE_ARN
 
 
 def test_application_role_has_none_of_the_permissions_it_must_not_have(templates):
@@ -429,10 +511,31 @@ def test_application_role_has_none_of_the_permissions_it_must_not_have(templates
     flat = json.dumps(statements).lower()
 
     for forbidden in (
-        "states:*", "states:stop", "states:delete", "states:create", "states:update", "states:send",
-        "states:list", "states:start_sync", "lambda:", "glue:", "athena:", "iam:", "cognito", "secretsmanager", "kms:", "s3:put", "s3:delete",
-        "dynamodb:scan", "dynamodb:batch", "dynamodb:createtable", "dynamodb:deletetable", "dynamodb:updatetable",
-        "dynamodb:describe", "dynamodb:*", "dynamodb:transact",
+        "states:*",
+        "states:stop",
+        "states:delete",
+        "states:create",
+        "states:update",
+        "states:send",
+        "states:list",
+        "states:start_sync",
+        "lambda:",
+        "glue:",
+        "athena:",
+        "iam:",
+        "cognito",
+        "secretsmanager",
+        "kms:",
+        "s3:put",
+        "s3:delete",
+        "dynamodb:scan",
+        "dynamodb:batch",
+        "dynamodb:createtable",
+        "dynamodb:deletetable",
+        "dynamodb:updatetable",
+        "dynamodb:describe",
+        "dynamodb:*",
+        "dynamodb:transact",
     ):
         assert forbidden not in flat
     # every DynamoDB resource is the one table or its one index, never a wildcard
@@ -445,7 +548,11 @@ def test_application_role_has_none_of_the_permissions_it_must_not_have(templates
 def dynamo_operations_in_store():
     source = (REPO / "src" / "dynamodb_run_store.py").read_text()
     calls = set(re.findall(r'(?:_call|_conditional)\(\s*"(\w+)"', source))
-    assert '"Update": {' not in source and '"Delete": {' not in source and '"ConditionCheck"' not in source
+    assert (
+        '"Update": {' not in source
+        and '"Delete": {' not in source
+        and '"ConditionCheck"' not in source
+    )
     return calls
 
 
@@ -486,8 +593,12 @@ def test_every_operation_the_store_performs_in_practice_is_permitted(templates):
     clock.advance(10_000)
     store.recover_interrupted()
     iam_action = {
-        "get_item": "dynamodb:GetItem", "update_item": "dynamodb:UpdateItem", "delete_item": "dynamodb:DeleteItem",
-        "query": "dynamodb:Query", "transact_write_items": "dynamodb:PutItem", "put_item": "dynamodb:PutItem",
+        "get_item": "dynamodb:GetItem",
+        "update_item": "dynamodb:UpdateItem",
+        "delete_item": "dynamodb:DeleteItem",
+        "query": "dynamodb:Query",
+        "transact_write_items": "dynamodb:PutItem",
+        "put_item": "dynamodb:PutItem",
     }
     _, edge = templates
     granted = {
@@ -503,13 +614,21 @@ def test_every_operation_the_store_performs_in_practice_is_permitted(templates):
 def test_the_cdk_permissions_are_a_subset_of_the_phase_6_specification(templates):
     from infrastructure.run_control import spec
 
-    policy = spec.api_task_policy(bucket="b", table="t", state_machine_arn="arn:aws:states:eu-west-1:851725545966:stateMachine:m")
+    policy = spec.api_task_policy(
+        bucket="b",
+        table="t",
+        state_machine_arn="arn:aws:states:eu-west-1:851725545966:stateMachine:m",
+    )
     spec_actions = {a for s in policy["Statement"] for a in s["Action"]}
     _, edge = templates
-    cdk_actions = {a for s in policy_for(edge, "ApiServiceTaskRole") for a in as_list(s["Action"])}
+    cdk_actions = {
+        a for s in policy_for(edge, "ApiServiceTaskRole") for a in as_list(s["Action"])
+    }
 
     assert cdk_actions <= spec_actions
-    assert {a for a in cdk_actions if a.startswith("states:")} == {"states:StartExecution", "states:DescribeExecution"}
+    assert {a for a in cdk_actions if a.startswith("states:")} == {
+        "states:DescribeExecution"
+    }
 
 
 def test_gold_prefix_matches_what_the_analytics_code_reads():
@@ -544,7 +663,10 @@ def test_task_security_group_accepts_only_the_alb_on_the_container_port(template
     _, edge = templates
     task, alb = sg_resources(edge)
 
-    assert "SecurityGroupIngress" not in resources(edge, "AWS::EC2::SecurityGroup")[task]["Properties"]
+    assert (
+        "SecurityGroupIngress"
+        not in resources(edge, "AWS::EC2::SecurityGroup")[task]["Properties"]
+    )
     ingress = [
         r["Properties"]
         for r in resources(edge, "AWS::EC2::SecurityGroupIngress").values()
@@ -552,7 +674,11 @@ def test_task_security_group_accepts_only_the_alb_on_the_container_port(template
     ]
     assert len(ingress) == 1
     assert ingress[0]["SourceSecurityGroupId"] == {"Fn::GetAtt": [alb, "GroupId"]}
-    assert (ingress[0]["FromPort"], ingress[0]["ToPort"], ingress[0]["IpProtocol"]) == (8000, 8000, "tcp")
+    assert (ingress[0]["FromPort"], ingress[0]["ToPort"], ingress[0]["IpProtocol"]) == (
+        8000,
+        8000,
+        "tcp",
+    )
     assert "CidrIp" not in ingress[0] and "CidrIpv6" not in ingress[0]
 
 
@@ -560,10 +686,12 @@ def test_task_security_group_allows_only_outbound_https(templates):
     _, edge = templates
     task, _ = sg_resources(edge)
 
-    egress = resources(edge, "AWS::EC2::SecurityGroup")[task]["Properties"]["SecurityGroupEgress"]
-    assert [(e["IpProtocol"], e["FromPort"], e["ToPort"], e["CidrIp"]) for e in egress] == [
-        ("tcp", 443, 443, "0.0.0.0/0")
+    egress = resources(edge, "AWS::EC2::SecurityGroup")[task]["Properties"][
+        "SecurityGroupEgress"
     ]
+    assert [
+        (e["IpProtocol"], e["FromPort"], e["ToPort"], e["CidrIp"]) for e in egress
+    ] == [("tcp", 443, 443, "0.0.0.0/0")]
 
 
 def test_alb_may_reach_the_task_port_and_nothing_else(templates):
@@ -576,10 +704,15 @@ def test_alb_may_reach_the_task_port_and_nothing_else(templates):
         if r["Properties"]["GroupId"] == {"Fn::GetAtt": [alb, "GroupId"]}
     ]
     assert len(outgoing) == 1
-    assert outgoing[0]["DestinationSecurityGroupId"] == {"Fn::GetAtt": [task, "GroupId"]}
+    assert outgoing[0]["DestinationSecurityGroupId"] == {
+        "Fn::GetAtt": [task, "GroupId"]
+    }
     assert (outgoing[0]["FromPort"], outgoing[0]["ToPort"]) == (8000, 8000)
     # No catch-all rule: the only outbound path is the explicit rule above.
-    assert "SecurityGroupEgress" not in resources(edge, "AWS::EC2::SecurityGroup")[alb]["Properties"]
+    assert (
+        "SecurityGroupEgress"
+        not in resources(edge, "AWS::EC2::SecurityGroup")[alb]["Properties"]
+    )
 
 
 def test_no_nat_no_interface_endpoints_and_two_free_gateway_endpoints(templates):
@@ -588,7 +721,10 @@ def test_no_nat_no_interface_endpoints_and_two_free_gateway_endpoints(templates)
     edge.resource_count_is("AWS::EC2::EIP", 0)
     endpoints = resources(edge, "AWS::EC2::VPCEndpoint").values()
 
-    assert [e["Properties"]["VpcEndpointType"] for e in endpoints] == ["Gateway", "Gateway"]
+    assert [e["Properties"]["VpcEndpointType"] for e in endpoints] == [
+        "Gateway",
+        "Gateway",
+    ]
     names = sorted(json.dumps(e["Properties"]["ServiceName"]) for e in endpoints)
     assert names[0].endswith('.dynamodb"]]}') and names[1].endswith('.s3"]]}')
     subnets = resources(edge, "AWS::EC2::Subnet").values()
@@ -624,12 +760,17 @@ def test_only_the_energy_host_is_forwarded_and_the_placeholder_503_is_gone(templ
     assert len(rules) == 1
     rule = next(iter(rules))["Properties"]
     assert rule["Priority"] == 10
-    assert rule["Conditions"] == [{"Field": "host-header", "HostHeaderConfig": {"Values": [API_HOSTNAME]}}]
+    assert rule["Conditions"] == [
+        {"Field": "host-header", "HostHeaderConfig": {"Values": [API_HOSTNAME]}}
+    ]
     assert [a["Type"] for a in rule["Actions"]] == ["forward"]
     assert "Service not deployed yet" not in json.dumps(edge.to_json())
     edge.has_resource_properties(
         "AWS::ElasticLoadBalancingV2::Listener",
-        {"Port": 443, "DefaultActions": [Match.object_like({"Type": "fixed-response"})]},
+        {
+            "Port": 443,
+            "DefaultActions": [Match.object_like({"Type": "fixed-response"})],
+        },
     )
 
 
@@ -642,7 +783,9 @@ def test_nothing_mentions_the_game_and_names_are_energy_specific(templates):
         for host in GAME_HOSTS:
             assert not re.search(rf"(?<![\w-]){re.escape(host)}", text)
         assert "bluff" not in text and "believe" not in text
-    assert only(templates[0], "AWS::ECR::Repository")["Properties"]["RepositoryName"].startswith("irish-energy")
+    assert only(templates[0], "AWS::ECR::Repository")["Properties"][
+        "RepositoryName"
+    ].startswith("irish-energy")
 
 
 def test_service_repository_and_table_must_be_given_together():
@@ -652,9 +795,18 @@ def test_service_repository_and_table_must_be_given_together():
     with pytest.raises(ValueError):
         EnergyApiEdgeStack(app, "E1", config=config(), service=SERVICE, env=ENV)
     with pytest.raises(ValueError):
-        EnergyApiEdgeStack(app, "E2", config=config(), repository=registry.repository, env=ENV)
+        EnergyApiEdgeStack(
+            app, "E2", config=config(), repository=registry.repository, env=ENV
+        )
     with pytest.raises(ValueError):
-        EnergyApiEdgeStack(app, "E3", config=config(), service=SERVICE, repository=registry.repository, env=ENV)
+        EnergyApiEdgeStack(
+            app,
+            "E3",
+            config=config(),
+            service=SERVICE,
+            repository=registry.repository,
+            env=ENV,
+        )
     with pytest.raises(ValueError):
         EnergyApiEdgeStack(app, "E4", config=config(), table=history.table, env=ENV)
 
@@ -667,10 +819,16 @@ def ctx(**values):
 
 
 def test_defaults_are_the_documented_values():
-    assert (SERVICE.container_port, SERVICE.cpu, SERVICE.memory_mib, SERVICE.desired_count) == (8000, 256, 1024, 1)
+    assert (
+        SERVICE.container_port,
+        SERVICE.cpu,
+        SERVICE.memory_mib,
+        SERVICE.desired_count,
+    ) == (8000, 256, 1024, 1)
     assert SERVICE.health_check_path == "/health" and SERVICE.log_retention_days == 30
     assert SERVICE.bucket == "irish-energy-data-platform-851725545966"
     assert SERVICE.secret_arns == ()
+    assert SERVICE.pipeline_execution_enabled is False
 
 
 def test_service_inputs_are_optional_but_all_or_nothing():
@@ -696,7 +854,11 @@ def test_service_inputs_are_optional_but_all_or_nothing():
     ],
 )
 def test_invalid_service_inputs_are_rejected(overrides):
-    values = {"apiImageTag": "v1", "cognitoUserPoolId": "eu-west-1_TestPool1", "cognitoAppClientId": "testclientid1234567890"}
+    values = {
+        "apiImageTag": "v1",
+        "cognitoUserPoolId": "eu-west-1_TestPool1",
+        "cognitoAppClientId": "testclientid1234567890",
+    }
     values.update(overrides)
 
     with pytest.raises(ConfigError):
@@ -705,17 +867,69 @@ def test_invalid_service_inputs_are_rejected(overrides):
 
 def test_valid_service_inputs_load():
     loaded = load_service_config(
-        ctx(apiImageTag="2026.10.30-1", cognitoUserPoolId="eu-west-1_TestPool1", cognitoAppClientId="testclientid1234567890")
+        ctx(
+            apiImageTag="2026.10.30-1",
+            cognitoUserPoolId="eu-west-1_TestPool1",
+            cognitoAppClientId="testclientid1234567890",
+        )
     )
 
     assert loaded.image_tag == "2026.10.30-1" and loaded.cognito_region == "eu-west-1"
+    assert loaded.pipeline_execution_enabled is False
+
+
+@pytest.mark.parametrize("value", ["true", True])
+def test_pipeline_execution_can_be_explicitly_enabled(value):
+    loaded = load_service_config(
+        ctx(
+            apiImageTag="v1",
+            cognitoUserPoolId="eu-west-1_TestPool1",
+            cognitoAppClientId="testclientid1234567890",
+            pipelineExecutionEnabled=value,
+        )
+    )
+    assert loaded.pipeline_execution_enabled is True
+
+
+@pytest.mark.parametrize("value", ["false", False])
+def test_pipeline_execution_can_be_explicitly_disabled(value):
+    loaded = load_service_config(
+        ctx(
+            apiImageTag="v1",
+            cognitoUserPoolId="eu-west-1_TestPool1",
+            cognitoAppClientId="testclientid1234567890",
+            pipelineExecutionEnabled=value,
+        )
+    )
+    assert loaded.pipeline_execution_enabled is False
+
+
+def test_invalid_pipeline_execution_context_is_rejected():
+    with pytest.raises(ConfigError, match="pipelineExecutionEnabled"):
+        load_service_config(
+            ctx(
+                apiImageTag="v1",
+                cognitoUserPoolId="eu-west-1_TestPool1",
+                cognitoAppClientId="testclientid1234567890",
+                pipelineExecutionEnabled="yes",
+            )
+        )
+
+
+def test_pipeline_execution_cannot_be_enabled_without_api_service():
+    with pytest.raises(ConfigError, match="requires the API service configuration"):
+        load_service_config(ctx(pipelineExecutionEnabled="true"))
 
 
 # Whole app
 
 
 CERTS = {"apiCertificateArn": API_CERT, "frontendCertificateArn": FRONTEND_CERT}
-SERVICE_CTX = {"apiImageTag": "v0.1.0", "cognitoUserPoolId": "eu-west-1_TestPool1", "cognitoAppClientId": "testclientid1234567890"}
+SERVICE_CTX = {
+    "apiImageTag": "v0.1.0",
+    "cognitoUserPoolId": "eu-west-1_TestPool1",
+    "cognitoAppClientId": "testclientid1234567890",
+}
 
 
 def test_app_with_service_inputs_synthesizes_the_service(tmp_path):
@@ -723,9 +937,15 @@ def test_app_with_service_inputs_synthesizes_the_service(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "IrishEnergyApiRegistryStack.template.json" in names
-    template = json.loads((tmp_path / "IrishEnergyApiEdgeStack.template.json").read_text())
+    template = json.loads(
+        (tmp_path / "IrishEnergyApiEdgeStack.template.json").read_text()
+    )
     kinds = {r["Type"] for r in template["Resources"].values()}
-    assert {"AWS::ECS::Service", "AWS::ECS::TaskDefinition", "AWS::ECS::Cluster"} <= kinds
+    assert {
+        "AWS::ECS::Service",
+        "AWS::ECS::TaskDefinition",
+        "AWS::ECS::Cluster",
+    } <= kinds
 
 
 def test_app_without_service_inputs_keeps_the_placeholder_and_says_so(tmp_path):
@@ -733,8 +953,12 @@ def test_app_without_service_inputs_keeps_the_placeholder_and_says_so(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert "service skipped" in result.stdout
-    template = json.loads((tmp_path / "IrishEnergyApiEdgeStack.template.json").read_text())
-    assert not {r["Type"] for r in template["Resources"].values()} & {"AWS::ECS::Service"}
+    template = json.loads(
+        (tmp_path / "IrishEnergyApiEdgeStack.template.json").read_text()
+    )
+    assert not {r["Type"] for r in template["Resources"].values()} & {
+        "AWS::ECS::Service"
+    }
 
 
 @pytest.mark.parametrize(

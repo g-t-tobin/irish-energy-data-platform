@@ -29,6 +29,7 @@ FRONTEND_CERTIFICATE_CONTEXT = "frontendCertificateArn"
 API_IMAGE_TAG_CONTEXT = "apiImageTag"
 COGNITO_POOL_CONTEXT = "cognitoUserPoolId"
 COGNITO_CLIENT_CONTEXT = "cognitoAppClientId"
+PIPELINE_EXECUTION_CONTEXT = "pipelineExecutionEnabled"
 
 # Explicit service settings (no secrets): see docs/administrator-handover.md.
 ECR_REPOSITORY_NAME = "irish-energy-api"
@@ -70,9 +71,15 @@ PIPELINE_STAGES = (
 
 # Step Functions workflow (Phase 9.5). The ARN is derived, not looked up: names are fixed.
 STATE_MACHINE_NAME = "irish-energy-pipeline"
-STATE_MACHINE_ARN = f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:{STATE_MACHINE_NAME}"
-STATE_MACHINE_EXECUTION_ARN_PATTERN = f"arn:aws:states:{REGION}:{ACCOUNT}:execution:{STATE_MACHINE_NAME}:*"
-PIPELINE_FUNCTION_EXPORT = "IrishEnergyPipeline-{label}FunctionArn"  # exported by the pipeline stack
+STATE_MACHINE_ARN = (
+    f"arn:aws:states:{REGION}:{ACCOUNT}:stateMachine:{STATE_MACHINE_NAME}"
+)
+STATE_MACHINE_EXECUTION_ARN_PATTERN = (
+    f"arn:aws:states:{REGION}:{ACCOUNT}:execution:{STATE_MACHINE_NAME}:*"
+)
+PIPELINE_FUNCTION_EXPORT = (
+    "IrishEnergyPipeline-{label}FunctionArn"  # exported by the pipeline stack
+)
 
 # Optional scheduled reconciler (Phase 9.6.1): absent unless -c reconcilerEnabled=true, and its
 # schedule stays DISABLED unless -c reconcilerScheduleState=ENABLED is also given.
@@ -110,7 +117,9 @@ def validate_deployment_account(env: Mapping[str, str]) -> None:
             f"Run with CDK_DEFAULT_ACCOUNT={ACCOUNT} CDK_DEFAULT_REGION={REGION}."
         )
     if value != ACCOUNT:
-        raise ConfigError(f"Refusing to synthesize for account {value!r}; CDK_DEFAULT_ACCOUNT must be exactly {ACCOUNT}.")
+        raise ConfigError(
+            f"Refusing to synthesize for account {value!r}; CDK_DEFAULT_ACCOUNT must be exactly {ACCOUNT}."
+        )
 
 
 class ConfigError(ValueError):
@@ -144,7 +153,9 @@ def validate_certificate_arn(arn: str, *, region: str, purpose: str) -> str:
     """The certificate must live in the right account and the region the service requires."""
     match = _CERT_ARN_RE.match(arn or "")
     if not match:
-        raise ConfigError(f"{purpose} certificate ARN is not a valid ACM certificate ARN.")
+        raise ConfigError(
+            f"{purpose} certificate ARN is not a valid ACM certificate ARN."
+        )
     if match["account"] != ACCOUNT:
         raise ConfigError(f"{purpose} certificate must belong to account {ACCOUNT}.")
     if match["region"] != region:
@@ -158,7 +169,9 @@ def load_edge_config(
     """None when no certificate ARNs are supplied (edge stacks are then skipped)."""
     default_account = env.get("CDK_DEFAULT_ACCOUNT")
     if default_account and default_account != ACCOUNT:
-        raise ConfigError(f"Refusing to synthesize for account {default_account}; expected {ACCOUNT}.")
+        raise ConfigError(
+            f"Refusing to synthesize for account {default_account}; expected {ACCOUNT}."
+        )
 
     api_arn = get_context(API_CERTIFICATE_CONTEXT)
     frontend_arn = get_context(FRONTEND_CERTIFICATE_CONTEXT)
@@ -174,7 +187,9 @@ def load_edge_config(
         region=REGION,
         api_hostname=validate_hostname(API_HOSTNAME),
         frontend_hostname=validate_hostname(FRONTEND_HOSTNAME),
-        api_certificate_arn=validate_certificate_arn(api_arn, region=REGION, purpose="API"),
+        api_certificate_arn=validate_certificate_arn(
+            api_arn, region=REGION, purpose="API"
+        ),
         frontend_certificate_arn=validate_certificate_arn(
             frontend_arn, region=CLOUDFRONT_CERTIFICATE_REGION, purpose="Frontend"
         ),
@@ -189,6 +204,7 @@ class ApiServiceConfig:
     cognito_region: str
     user_pool_id: str
     app_client_id: str
+    pipeline_execution_enabled: bool = False
     bucket: str = DATA_LAKE_BUCKET
     allowed_origin: str = f"https://{FRONTEND_HOSTNAME}"
     container_port: int = CONTAINER_PORT
@@ -202,7 +218,9 @@ class ApiServiceConfig:
 
     def __post_init__(self) -> None:
         for name, arn in self.secret_arns:
-            if not re.match(r"^[A-Z][A-Z0-9_]*$", name) or not _SECRET_ARN_RE.match(arn):
+            if not re.match(r"^[A-Z][A-Z0-9_]*$", name) or not _SECRET_ARN_RE.match(
+                arn
+            ):
                 raise ConfigError(f"Invalid secret mapping for {name!r}.")
 
 
@@ -211,7 +229,18 @@ def load_service_config(get_context: Callable[[str], Any]) -> ApiServiceConfig |
     tag = get_context(API_IMAGE_TAG_CONTEXT)
     pool = get_context(COGNITO_POOL_CONTEXT)
     client = get_context(COGNITO_CLIENT_CONTEXT)
+    execution_value = get_context(PIPELINE_EXECUTION_CONTEXT)
+    if execution_value is None:
+        execution_enabled = False
+    elif str(execution_value).lower() in {"true", "false"}:
+        execution_enabled = str(execution_value).lower() == "true"
+    else:
+        raise ConfigError(f"{PIPELINE_EXECUTION_CONTEXT} must be true or false.")
     if not (tag or pool or client):
+        if execution_enabled:
+            raise ConfigError(
+                f"{PIPELINE_EXECUTION_CONTEXT}=true requires the API service configuration."
+            )
         return None
     if not (tag and pool and client):
         raise ConfigError(
@@ -227,7 +256,11 @@ def load_service_config(get_context: Callable[[str], Any]) -> ApiServiceConfig |
     if not _CLIENT_RE.match(str(client)):
         raise ConfigError("cognitoAppClientId is not a valid app client ID.")
     return ApiServiceConfig(
-        image_tag=str(tag), cognito_region=REGION, user_pool_id=str(pool), app_client_id=str(client)
+        image_tag=str(tag),
+        cognito_region=REGION,
+        user_pool_id=str(pool),
+        app_client_id=str(client),
+        pipeline_execution_enabled=execution_enabled,
     )
 
 
@@ -236,7 +269,9 @@ class ReconcilerConfig:
     schedule_state: str  # "DISABLED" or "ENABLED"
 
 
-def load_reconciler_config(get_context: Callable[[str], Any]) -> ReconcilerConfig | None:
+def load_reconciler_config(
+    get_context: Callable[[str], Any],
+) -> ReconcilerConfig | None:
     """None (no reconciler stack) unless explicitly enabled; the schedule defaults to DISABLED."""
     enabled = get_context(RECONCILER_ENABLED_CONTEXT)
     if enabled is None or str(enabled).lower() == "false":

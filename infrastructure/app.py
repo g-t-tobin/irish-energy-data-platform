@@ -29,12 +29,13 @@ from stacks.energy_workflow_stack import EnergyWorkflowStack
 app = cdk.App()
 
 # Also set here because `python app.py` does not read cdk.json; a test keeps the two equal.
-app.node.set_context("@aws-cdk/core:bootstrapQualifier", "energydev01")
+app.node.set_context("@aws-cdk/core:bootstrapQualifier", "hnb659fds")
 
 # Pre-populated context: the VPC would otherwise look up the availability zones at synthesis, which
 # needs the bootstrap lookup role (a broad read-only role) that the deployment identity must not use.
 app.node.set_context(
-    f"availability-zones:account={ACCOUNT}:region={REGION}", [f"{REGION}a", f"{REGION}b", f"{REGION}c"]
+    f"availability-zones:account={ACCOUNT}:region={REGION}",
+    [f"{REGION}a", f"{REGION}b", f"{REGION}c"],
 )
 
 # Every stack, the data lake included, is pinned to the project's account and region; a different
@@ -64,7 +65,9 @@ try:
     service = load_service_config(app.node.try_get_context)
     reconciler = load_reconciler_config(app.node.try_get_context)
     if service is not None and edge is None:
-        raise ConfigError("The API service needs both certificate ARNs (edge stack) as well.")
+        raise ConfigError(
+            "The API service needs both certificate ARNs (edge stack) as well."
+        )
 except ConfigError as error:
     raise SystemExit(f"Configuration error: {error}")
 

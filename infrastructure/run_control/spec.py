@@ -26,7 +26,11 @@ LAMBDA_TRANSIENT_ERRORS = [
 TRANSIENT_SOURCE_ERRORS = ["TransientEirGridError"]
 PROGRESS_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r)"
 TERMINAL_CONDITION = "attribute_exists(pk) AND #st IN (:q, :r, :i)"
-_STATUS_VALUES = {":q": {"S": "queued"}, ":r": {"S": "running"}, ":i": {"S": "interrupted"}}
+_STATUS_VALUES = {
+    ":q": {"S": "queued"},
+    ":r": {"S": "running"},
+    ":i": {"S": "interrupted"},
+}
 
 
 def table_definition(table_name: str) -> dict[str, Any]:
@@ -47,13 +51,19 @@ def table_definition(table_name: str) -> dict[str, Any]:
             {
                 "IndexName": schema.LIST_INDEX,
                 "KeySchema": [
-                    {"AttributeName": schema.LIST_INDEX_PARTITION_KEY, "KeyType": "HASH"},
+                    {
+                        "AttributeName": schema.LIST_INDEX_PARTITION_KEY,
+                        "KeyType": "HASH",
+                    },
                     {"AttributeName": schema.LIST_INDEX_SORT_KEY, "KeyType": "RANGE"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
             }
         ],
-        "TimeToLiveSpecification": {"AttributeName": schema.TTL_ATTRIBUTE, "Enabled": True},
+        "TimeToLiveSpecification": {
+            "AttributeName": schema.TTL_ATTRIBUTE,
+            "Enabled": True,
+        },
         "PointInTimeRecoveryEnabled": True,
         "DeletionProtectionEnabled": True,
         "RemovalPolicy": "RETAIN",
@@ -70,54 +80,64 @@ def execution_arn_prefix(state_machine_arn: str) -> str:
 
 
 def api_task_policy(
-    *, bucket: str, table: str, state_machine_arn: str
+    *,
+    bucket: str,
+    table: str,
+    state_machine_arn: str,
+    pipeline_execution_enabled: bool = False,
 ) -> dict[str, Any]:
-    """Runtime role of the API: read Gold, manage run history, start/inspect one state machine."""
-    return {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "ListGoldPrefixOnly",
-                "Effect": "Allow",
-                "Action": ["s3:ListBucket"],
-                "Resource": [f"arn:aws:s3:::{bucket}"],
-                "Condition": {"StringLike": {"s3:prefix": [GOLD_PREFIX + "*"]}},
-            },
-            {
-                "Sid": "ReadGoldObjectsOnly",
-                "Effect": "Allow",
-                "Action": ["s3:GetObject"],
-                "Resource": [f"arn:aws:s3:::{bucket}/{GOLD_PREFIX}*"],
-            },
-            {
-                "Sid": "RunHistoryTable",
-                "Effect": "Allow",
-                "Action": [
-                    "dynamodb:GetItem",
-                    "dynamodb:PutItem",
-                    "dynamodb:UpdateItem",
-                    "dynamodb:DeleteItem",
-                    "dynamodb:Query",
-                ],
-                "Resource": [table, f"{table}/index/{schema.LIST_INDEX}"],
-            },
+    """Runtime role of the API; pipeline execution is disabled unless explicitly enabled."""
+    statements = [
+        {
+            "Sid": "ListGoldPrefixOnly",
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": [f"arn:aws:s3:::{bucket}"],
+            "Condition": {"StringLike": {"s3:prefix": [GOLD_PREFIX + "*"]}},
+        },
+        {
+            "Sid": "ReadGoldObjectsOnly",
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Resource": [f"arn:aws:s3:::{bucket}/{GOLD_PREFIX}*"],
+        },
+        {
+            "Sid": "RunHistoryTable",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Query",
+            ],
+            "Resource": [table, f"{table}/index/{schema.LIST_INDEX}"],
+        },
+        {
+            "Sid": "ReconcileOwnExecutions",
+            "Effect": "Allow",
+            "Action": ["states:DescribeExecution"],
+            "Resource": [execution_arn_prefix(state_machine_arn)],
+        },
+    ]
+    if pipeline_execution_enabled:
+        statements.append(
             {
                 "Sid": "StartAndInspectOneStateMachine",
                 "Effect": "Allow",
                 "Action": ["states:StartExecution"],
                 "Resource": [state_machine_arn],
-            },
-            {
-                "Sid": "ReconcileOwnExecutions",
-                "Effect": "Allow",
-                "Action": ["states:DescribeExecution"],
-                "Resource": [execution_arn_prefix(state_machine_arn)],
-            },
-        ],
+            }
+        )
+    return {
+        "Version": "2012-10-17",
+        "Statement": statements,
     }
 
 
-def state_machine_role_policy(*, table: str, stage_function_arns: list[str]) -> dict[str, Any]:
+def state_machine_role_policy(
+    *, table: str, stage_function_arns: list[str]
+) -> dict[str, Any]:
     """The state machine records progress itself and invokes only the listed stage functions."""
     return {
         "Version": "2012-10-17",
@@ -150,7 +170,10 @@ def pipeline_stage_role_policy(
                 "Sid": "ReadBronzeAndSilver",
                 "Effect": "Allow",
                 "Action": ["s3:GetObject"],
-                "Resource": [f"arn:aws:s3:::{bucket}/bronze/*", f"arn:aws:s3:::{bucket}/silver/*"],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}/bronze/*",
+                    f"arn:aws:s3:::{bucket}/silver/*",
+                ],
             },
             {
                 "Sid": "WriteLakeLayers",
@@ -218,7 +241,9 @@ def _update(
         "Next": next_state,
     }
     if on_error:
-        state["Catch"] = [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": on_error}]
+        state["Catch"] = [
+            {"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": on_error}
+        ]
     return state
 
 
@@ -237,12 +262,16 @@ def _release_lock(table: str, next_state: str) -> dict[str, Any]:
         },
         "ResultPath": None,
         # A missed release is harmless: the lease expires on its own.
-        "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": None, "Next": next_state}],
+        "Catch": [
+            {"ErrorEquals": ["States.ALL"], "ResultPath": None, "Next": next_state}
+        ],
         "Next": next_state,
     }
 
 
-def build_state_machine_definition(*, table: str, stage_function_arns: dict[str, str]) -> dict[str, Any]:
+def build_state_machine_definition(
+    *, table: str, stage_function_arns: dict[str, str]
+) -> dict[str, Any]:
     """Amazon States Language for one run. Input: {"run_id": ..., "days_back": ...}."""
     missing = set(STAGES) - set(stage_function_arns)
     if missing:
@@ -252,7 +281,12 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
     states: dict[str, Any] = {
         "MarkRunning": _update(
             table,
-            {"status": {"S": "running"}, "stage": {"S": "bronze"}, "started_at": now, "updated_at": now},
+            {
+                "status": {"S": "running"},
+                "stage": {"S": "bronze"},
+                "started_at": now,
+                "updated_at": now,
+            },
             PROGRESS_CONDITION,
             "Bronze",
             "MarkFailure",
@@ -263,8 +297,12 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
 
     for stage in STAGES:
         task_next = f"Record_{stage}" if stage in keys else "MarkSucceeded"
-        failure = "MarkPartialFailure" if stage == "glue_registration" else "MarkFailure"
-        states[stage.capitalize() if stage != "glue_registration" else "GlueRegistration"] = {
+        failure = (
+            "MarkPartialFailure" if stage == "glue_registration" else "MarkFailure"
+        )
+        states[
+            stage.capitalize() if stage != "glue_registration" else "GlueRegistration"
+        ] = {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke",
             "Parameters": {
@@ -294,7 +332,13 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
                     else []
                 ),
             ],
-            "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": failure}],
+            "Catch": [
+                {
+                    "ErrorEquals": ["States.ALL"],
+                    "ResultPath": "$.error",
+                    "Next": failure,
+                }
+            ],
             "Next": task_next,
         }
         if stage in keys:
@@ -314,7 +358,12 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
 
     states["MarkSucceeded"] = _update(
         table,
-        {"status": {"S": "succeeded"}, "stage": {"S": "completed"}, "finished_at": now, "updated_at": now},
+        {
+            "status": {"S": "succeeded"},
+            "stage": {"S": "completed"},
+            "finished_at": now,
+            "updated_at": now,
+        },
         TERMINAL_CONDITION,
         "ReleaseLockOnSuccess",
     )
@@ -337,7 +386,11 @@ def build_state_machine_definition(*, table: str, stage_function_arns: dict[str,
         )
     states["ReleaseLockOnFailure"] = _release_lock(table, "Failed")
     states["Succeeded"] = {"Type": "Succeed"}
-    states["Failed"] = {"Type": "Fail", "Error": "PipelineFailed", "Cause": "See the run record."}
+    states["Failed"] = {
+        "Type": "Fail",
+        "Error": "PipelineFailed",
+        "Cause": "See the run record.",
+    }
 
     return {
         "Comment": "Bronze, Silver, Gold and Glue registration for one run.",

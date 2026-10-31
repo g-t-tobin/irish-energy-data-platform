@@ -58,7 +58,9 @@ class ApiService(Construct):
             allow_all_outbound=False,
         )
         task_sg.add_egress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS to AWS services, ECR and Cognito JWKS"
+            ec2.Peer.any_ipv4(),
+            ec2.Port.tcp(443),
+            "HTTPS to AWS services, ECR and Cognito JWKS",
         )
 
         def trust() -> iam.IPrincipal:
@@ -69,7 +71,10 @@ class ApiService(Construct):
 
         # Execution role: pulls the image and writes logs (CDK adds exactly those grants).
         execution_role = iam.Role(
-            self, "ExecutionRole", assumed_by=trust(), description="ECS agent: pull image, write logs"
+            self,
+            "ExecutionRole",
+            assumed_by=trust(),
+            description="ECS agent: pull image, write logs",
         )
         # Application role: a read of the Gold prefix (src/analytics.py) and the run-history
         # table operations src/dynamodb_run_store.py performs, on this table and index only.
@@ -115,15 +120,15 @@ class ApiService(Construct):
             )
         )
 
-        # Dormant: nothing calls the executor while execution is disabled (src/settings.py).
-        # Exactly one state machine and its executions; never states:*.
-        task_role.add_to_policy(
-            iam.PolicyStatement(
-                sid="StartAndInspectOneStateMachine",
-                actions=["states:StartExecution"],
-                resources=[STATE_MACHINE_ARN],
+        # Grant execution permission only when explicitly enabled at deployment time.
+        if config.pipeline_execution_enabled:
+            task_role.add_to_policy(
+                iam.PolicyStatement(
+                    sid="StartAndInspectOneStateMachine",
+                    actions=["states:StartExecution"],
+                    resources=[STATE_MACHINE_ARN],
+                )
             )
-        )
         task_role.add_to_policy(
             iam.PolicyStatement(
                 sid="ReconcileOwnExecutions",
@@ -135,7 +140,9 @@ class ApiService(Construct):
         log_group = logs.LogGroup(
             self,
             "LogGroup",
-            retention=_RETENTION.get(config.log_retention_days, logs.RetentionDays.ONE_MONTH),
+            retention=_RETENTION.get(
+                config.log_retention_days, logs.RetentionDays.ONE_MONTH
+            ),
             removal_policy=RemovalPolicy.RETAIN,
         )
 
@@ -156,7 +163,7 @@ class ApiService(Construct):
         linux = ecs.LinuxParameters(self, "LinuxParameters", init_process_enabled=True)
         linux.drop_capabilities(ecs.Capability.ALL)
 
-        # No credentials here: AWS access comes from the task role. Execution is not enabled.
+        # No credentials here: AWS access comes from the task role. Pipeline execution is opt-in.
         environment = {
             "API_ENV": "production",
             "PORT": str(config.container_port),
@@ -171,19 +178,26 @@ class ApiService(Construct):
             "RUN_HISTORY_TABLE": table.table_name,
             "RUN_HISTORY_REGION": REGION,
             "PIPELINE_STATE_MACHINE_ARN": STATE_MACHINE_ARN,
+            "PIPELINE_EXECUTION_ENABLED": str(
+                config.pipeline_execution_enabled
+            ).lower(),
             # Trust X-Forwarded-For only from the ALB's network, never from clients.
             "FORWARDED_ALLOW_IPS": vpc.vpc_cidr_block,
         }
         secrets = {
             name: ecs.Secret.from_secrets_manager(
-                secretsmanager.Secret.from_secret_complete_arn(self, f"Secret{index}", arn)
+                secretsmanager.Secret.from_secret_complete_arn(
+                    self, f"Secret{index}", arn
+                )
             )
             for index, (name, arn) in enumerate(config.secret_arns)
         }
 
         container = task_definition.add_container(
             "api",
-            image=ecs.ContainerImage.from_ecr_repository(repository, tag=config.image_tag),
+            image=ecs.ContainerImage.from_ecr_repository(
+                repository, tag=config.image_tag
+            ),
             essential=True,
             user=CONTAINER_USER,
             readonly_root_filesystem=True,
@@ -206,7 +220,10 @@ class ApiService(Construct):
         )
 
         cluster = ecs.Cluster(
-            self, "Cluster", vpc=vpc, container_insights_v2=ecs.ContainerInsights.DISABLED
+            self,
+            "Cluster",
+            vpc=vpc,
+            container_insights_v2=ecs.ContainerInsights.DISABLED,
         )
         service = ecs.FargateService(
             self,
