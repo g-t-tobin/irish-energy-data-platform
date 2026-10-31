@@ -32,6 +32,9 @@ class EnergyCognitoStack(Stack):
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
             removal_policy=RemovalPolicy.RETAIN,
         )
+        self.user_pool.node.default_child.add_property_override(
+            "DeletionProtection", "ACTIVE"
+        )
 
         self.operator_group = cognito.CfnUserPoolGroup(
             self,
