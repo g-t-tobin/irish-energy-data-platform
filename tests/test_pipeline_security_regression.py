@@ -238,12 +238,20 @@ def test_the_complete_production_configuration_loads_with_execution_disabled():
     assert settings.pipeline_execution_enabled is False and settings.pipeline_state_machine_arn == STATE_MACHINE_ARN
 
 
+
+def test_complete_production_configuration_can_explicitly_enable_execution():
+    settings = load_settings({**PRODUCTION, "PIPELINE_EXECUTION_ENABLED": "true"})
+
+    assert settings.pipeline_execution_enabled is True
+    assert settings.pipeline_state_machine_arn == STATE_MACHINE_ARN
+
+
 @pytest.mark.parametrize(
     "broken",
     [
         {"COGNITO_REGION": ""}, {"COGNITO_USER_POOL_ID": ""}, {"COGNITO_APP_CLIENT_ID": ""},
         {"RUN_HISTORY_BACKEND": "sqlite"}, {"RUN_HISTORY_BACKEND": ""}, {"RUN_HISTORY_TABLE": ""},
-        {"PIPELINE_EXECUTION_ENABLED": "true"}, {"ENABLE_API_DOCS": "true"},
+        {"ENABLE_API_DOCS": "true"},
         {"CORS_ALLOWED_ORIGINS": "http://energy.example.com"}, {"PIPELINE_STATE_MACHINE_ARN": "arn:aws:states:bad"},
     ],
 )

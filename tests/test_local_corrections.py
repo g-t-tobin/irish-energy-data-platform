@@ -136,8 +136,8 @@ def test_only_the_environment_template_is_tracked_among_env_and_secret_looking_f
 
 
 @pytest.mark.parametrize("flag", ["true", "TRUE", "1", "yes", "on"])
-def test_enabling_pipeline_execution_still_fails_startup(flag):
-    with pytest.raises(SettingsError, match="cannot be enabled"):
+def test_enabling_pipeline_execution_requires_security_configuration(flag):
+    with pytest.raises(SettingsError, match="requires Cognito authentication"):
         load_settings({"API_ENV": "local", "PIPELINE_EXECUTION_ENABLED": flag})
 
 

@@ -1,4 +1,3 @@
-
 """Local API for controlling and monitoring the energy data pipeline."""
 
 import logging
@@ -41,40 +40,71 @@ from src.run_store import (
     utc_now,
 )
 from src.run_store_factory import build_run_store
-from src.settings import Settings, load_run_history_settings, load_settings
+from src.settings import (
+    RunHistorySettings,
+    Settings,
+    load_run_history_settings,
+    load_settings,
+)
 
 logger = logging.getLogger(__name__)
 
 MAX_BODY_BYTES = 4096  # the only body is {"days_back": n}
-_RUN_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_RUN_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 _store: RunHistory | None = None
 _store_lock = threading.Lock()
 
 
-def get_store() -> RunHistory:
-    """Create the run store on first use (and never at import time)."""
+def get_store(settings: RunHistorySettings | None = None) -> RunHistory:
+    """Create the shared run store on first use (never at import time)."""
     global _store
     with _store_lock:
         if _store is None:
-            _store = build_run_store(load_run_history_settings(os.environ))
+            run_settings = settings or load_run_history_settings(os.environ)
+            _store = build_run_store(run_settings)
         return _store
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
+    settings: Settings = app.state.settings
+
     if getattr(app.state, "verifier", None) is None:
         logger.error(
             "Authentication is not configured; protected routes will return 503."
         )
-    # Runs left active by a previous process cannot be trusted as finished.
+
     try:
-        recovered = get_store().recover_interrupted()
-        if recovered:
-            logger.warning("Marked %d interrupted run(s) from a previous process", recovered)
+        store = get_store(settings.run_history)
+
+        from src.execution_runtime import configure_executor
+
+        app.state.executor = configure_executor(settings, store)
+
+        if not settings.pipeline_execution_enabled:
+            # SQLite runs belong to this local process. DynamoDB may contain
+            # executions still running in Step Functions, so never blindly
+            # mark its active records interrupted when execution is disabled.
+            if settings.run_history.backend == "sqlite":
+                recovered = store.recover_interrupted()
+                if recovered:
+                    logger.warning(
+                        "Marked %d interrupted run(s) from a previous process",
+                        recovered,
+                    )
+            else:
+                logger.info(
+                    "Skipped automatic recovery of shared run history while execution is disabled."
+                )
     except RunStoreError:
         logger.exception("Run history storage unavailable at startup")
+        if settings.pipeline_execution_enabled:
+            raise
+
     yield
 
 
@@ -82,7 +112,9 @@ router = APIRouter()
 _executor: PipelineExecutor = DisabledExecutor()
 
 
-def get_executor() -> PipelineExecutor:
+def get_executor(request: Request = None) -> PipelineExecutor:
+    if request is not None:
+        return request.app.state.executor
     return _executor
 
 
@@ -91,9 +123,7 @@ class RunRequest(BaseModel):
 
 
 def _storage_unavailable() -> HTTPException:
-    return HTTPException(
-        status_code=503, detail="Run history storage is unavailable."
-    )
+    return HTTPException(status_code=503, detail="Run history storage is unavailable.")
 
 
 def execute_pipeline(run_id: str, days_back: int) -> None:
@@ -103,9 +133,7 @@ def execute_pipeline(run_id: str, days_back: int) -> None:
     gold_key: str | None = None
 
     try:
-        store.update_run(
-            run_id, status="running", stage=stage, started_at=utc_now()
-        )
+        store.update_run(run_id, status="running", stage=stage, started_at=utc_now())
 
         # Import here so the API health endpoint can start even if a pipeline
         # dependency is unavailable.
@@ -314,6 +342,9 @@ def create_app(settings: Settings, key_provider: KeyProvider | None = None) -> F
         allow_methods=["GET", "POST"],
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
     )
+    app.state.settings = settings
+    app.state.executor = DisabledExecutor()
+
     cognito = settings.cognito
     app.state.verifier = (
         TokenVerifier(cognito, key_provider or JwksKeyProvider(cognito.jwks_url))

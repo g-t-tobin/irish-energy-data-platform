@@ -25,7 +25,9 @@ def test_defaults_are_safe():
             client_id="abcdefghij1234567890",
         ),
         rate_limits=RateLimits(),
-        run_history=RunHistorySettings(backend="dynamodb", table="irish-energy-run-history"),
+        run_history=RunHistorySettings(
+            backend="dynamodb", table="irish-energy-run-history"
+        ),
     )
 
 
@@ -37,11 +39,50 @@ def test_local_env_defaults_to_dev_origins_only():
     assert settings.enable_api_docs is False
 
 
+def test_execution_requires_cognito():
+    with pytest.raises(SettingsError, match="requires Cognito"):
+        load_settings(
+            {
+                "API_ENV": "local",
+                "PIPELINE_EXECUTION_ENABLED": "true",
+            }
+        )
+
+
+def test_execution_requires_dynamodb():
+    with pytest.raises(SettingsError, match="requires DynamoDB"):
+        load_settings(
+            {
+                "API_ENV": "local",
+                **COGNITO_ENV,
+                "PIPELINE_EXECUTION_ENABLED": "true",
+            }
+        )
+
+
+def test_execution_requires_state_machine_arn():
+    with pytest.raises(SettingsError, match="PIPELINE_STATE_MACHINE_ARN"):
+        load_settings(
+            {
+                **PRODUCTION_ENV,
+                "PIPELINE_EXECUTION_ENABLED": "true",
+            }
+        )
+
+
 @pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
-@pytest.mark.parametrize("api_env", ["local", "production"])
-def test_execution_can_never_be_enabled(value, api_env):
-    with pytest.raises(SettingsError, match="cannot be enabled"):
-        load_settings({"API_ENV": api_env, "PIPELINE_EXECUTION_ENABLED": value})
+def test_execution_accepts_complete_production_configuration(value):
+    settings = load_settings(
+        {
+            **PRODUCTION_ENV,
+            "PIPELINE_EXECUTION_ENABLED": value,
+            "PIPELINE_STATE_MACHINE_ARN": (
+                "arn:aws:states:eu-west-1:851725545966:stateMachine:IrishEnergyPipeline"
+            ),
+        }
+    )
+
+    assert settings.pipeline_execution_enabled is True
 
 
 @pytest.mark.parametrize("value", ["", "false", "0", "no", "off"])
@@ -63,7 +104,9 @@ def test_invalid_api_env_is_rejected():
 
 
 def test_docs_only_in_local():
-    assert load_settings({"API_ENV": "local", "ENABLE_API_DOCS": "true"}).enable_api_docs
+    assert load_settings(
+        {"API_ENV": "local", "ENABLE_API_DOCS": "true"}
+    ).enable_api_docs
     with pytest.raises(SettingsError, match="docs"):
         load_settings({"API_ENV": "production", "ENABLE_API_DOCS": "true"})
     with pytest.raises(SettingsError, match="docs"):
@@ -90,7 +133,8 @@ def test_production_origins_must_be_https_and_not_local():
 
 
 @pytest.mark.parametrize(
-    "bad", ["*", "app.example.com", "https://app.example.com/path", "ftp://x.com", "https://"]
+    "bad",
+    ["*", "app.example.com", "https://app.example.com/path", "ftp://x.com", "https://"],
 )
 @pytest.mark.parametrize("api_env", ["local", "production"])
 def test_malformed_origins_rejected_in_every_environment(bad, api_env):
@@ -137,7 +181,11 @@ def test_partial_cognito_in_production_still_fails():
 def test_rate_limit_defaults_and_overrides():
     defaults = load_settings(PRODUCTION_ENV).rate_limits
     custom = load_settings(
-        {**PRODUCTION_ENV, "RATE_LIMIT_READ_PER_MINUTE": "10", "RATE_LIMIT_WRITE_PER_HOUR": "2"}
+        {
+            **PRODUCTION_ENV,
+            "RATE_LIMIT_READ_PER_MINUTE": "10",
+            "RATE_LIMIT_WRITE_PER_HOUR": "2",
+        }
     ).rate_limits
 
     assert defaults == RateLimits()
@@ -154,7 +202,10 @@ def test_invalid_rate_limits_are_rejected(value):
 def test_cognito_config_and_derived_urls():
     cognito = load_settings(PRODUCTION_ENV).cognito
 
-    assert cognito.issuer == "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_AbC123xyz"
+    assert (
+        cognito.issuer
+        == "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_AbC123xyz"
+    )
     assert cognito.jwks_url == cognito.issuer + "/.well-known/jwks.json"
     assert cognito.client_id == "abcdefghij1234567890"
 
@@ -191,26 +242,30 @@ def test_run_history_defaults_to_local_sqlite():
 
 def test_dynamodb_backend_needs_a_valid_table_and_region():
     ok = load_settings(
-        {**COGNITO_ENV, "RUN_HISTORY_BACKEND": "dynamodb", "RUN_HISTORY_TABLE": "irish-energy-runs"}
+        {
+            **COGNITO_ENV,
+            "RUN_HISTORY_BACKEND": "dynamodb",
+            "RUN_HISTORY_TABLE": "irish-energy-runs",
+        }
     ).run_history
 
-    assert (ok.backend, ok.table, ok.region) == ("dynamodb", "irish-energy-runs", "eu-west-1")
+    assert (ok.backend, ok.table, ok.region) == (
+        "dynamodb",
+        "irish-energy-runs",
+        "eu-west-1",
+    )
     for bad in (
         {"RUN_HISTORY_BACKEND": "dynamodb"},
         {"RUN_HISTORY_BACKEND": "dynamodb", "RUN_HISTORY_TABLE": "bad table!"},
-        {"RUN_HISTORY_BACKEND": "dynamodb", "RUN_HISTORY_TABLE": "ok-table", "RUN_HISTORY_REGION": "nowhere"},
+        {
+            "RUN_HISTORY_BACKEND": "dynamodb",
+            "RUN_HISTORY_TABLE": "ok-table",
+            "RUN_HISTORY_REGION": "nowhere",
+        },
         {"RUN_HISTORY_BACKEND": "redis"},
     ):
         with pytest.raises(SettingsError):
             load_settings({**COGNITO_ENV, **bad})
-
-
-def test_enabling_execution_is_still_impossible_with_shared_history():
-    with pytest.raises(SettingsError, match="cannot be enabled"):
-        load_settings(
-            {**COGNITO_ENV, "PIPELINE_EXECUTION_ENABLED": "true", "RUN_HISTORY_BACKEND": "dynamodb",
-             "RUN_HISTORY_TABLE": "irish-energy-runs"}
-        )
 
 
 @pytest.mark.parametrize(

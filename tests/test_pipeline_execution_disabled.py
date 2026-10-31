@@ -27,9 +27,9 @@ def test_a_state_machine_arn_does_not_enable_execution():
 
 
 @pytest.mark.parametrize("flag", ["true", "1", "yes", "TRUE", "on"])
-def test_the_execution_switch_is_still_refused_with_or_without_an_arn(flag):
+def test_execution_switch_requires_security_configuration(flag):
     for extra in ({}, {"PIPELINE_STATE_MACHINE_ARN": ARN}):
-        with pytest.raises(SettingsError, match="cannot be enabled"):
+        with pytest.raises(SettingsError, match="requires Cognito authentication"):
             load_settings({**LOCAL, "PIPELINE_EXECUTION_ENABLED": flag, **extra})
 
 

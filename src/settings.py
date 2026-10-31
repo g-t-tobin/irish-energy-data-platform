@@ -94,7 +94,9 @@ def _load_state_machine_arn(env: Mapping[str, str]) -> str | None:
     if not arn:
         return None
     if not _STATE_MACHINE_ARN_RE.match(arn):
-        raise SettingsError("PIPELINE_STATE_MACHINE_ARN must be a Step Functions state machine ARN.")
+        raise SettingsError(
+            "PIPELINE_STATE_MACHINE_ARN must be a Step Functions state machine ARN."
+        )
     return arn
 
 
@@ -114,13 +116,19 @@ def _parse_limit(env: Mapping[str, str], name: str, default: int) -> int:
 def _load_rate_limits(env: Mapping[str, str]) -> RateLimits:
     defaults = RateLimits()
     return RateLimits(
-        read_per_minute=_parse_limit(env, "RATE_LIMIT_READ_PER_MINUTE", defaults.read_per_minute),
+        read_per_minute=_parse_limit(
+            env, "RATE_LIMIT_READ_PER_MINUTE", defaults.read_per_minute
+        ),
         analytics_per_minute=_parse_limit(
             env, "RATE_LIMIT_ANALYTICS_PER_MINUTE", defaults.analytics_per_minute
         ),
-        write_per_hour=_parse_limit(env, "RATE_LIMIT_WRITE_PER_HOUR", defaults.write_per_hour),
+        write_per_hour=_parse_limit(
+            env, "RATE_LIMIT_WRITE_PER_HOUR", defaults.write_per_hour
+        ),
         auth_failures_per_minute=_parse_limit(
-            env, "RATE_LIMIT_AUTH_FAILURES_PER_MINUTE", defaults.auth_failures_per_minute
+            env,
+            "RATE_LIMIT_AUTH_FAILURES_PER_MINUTE",
+            defaults.auth_failures_per_minute,
         ),
     )
 
@@ -166,9 +174,7 @@ def _parse_origin(origin: str, production: bool) -> str:
     ):
         raise SettingsError(f"Invalid CORS origin: {origin!r}.")
     if production and (parsed.scheme != "https" or host in _LOCAL_HOSTS):
-        raise SettingsError(
-            "Production CORS origins must be https and not localhost."
-        )
+        raise SettingsError("Production CORS origins must be https and not localhost.")
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
@@ -181,12 +187,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         raise SettingsError("API_ENV must be 'local' or 'production'.")
     production = api_env == "production"
 
-    # No authentication exists yet, so execution must never be switchable on.
-    if _parse_bool("PIPELINE_EXECUTION_ENABLED", env.get("PIPELINE_EXECUTION_ENABLED")):
-        raise SettingsError(
-            "Pipeline execution cannot be enabled: authentication and managed "
-            "execution are not implemented."
-        )
+    execution_enabled = _parse_bool(
+        "PIPELINE_EXECUTION_ENABLED",
+        env.get("PIPELINE_EXECUTION_ENABLED"),
+    )
+    state_machine_arn = _load_state_machine_arn(env)
 
     enable_docs = _parse_bool("ENABLE_API_DOCS", env.get("ENABLE_API_DOCS"))
     if enable_docs and production:
@@ -215,13 +220,23 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             "API_ENV=production requires RUN_HISTORY_BACKEND=dynamodb and RUN_HISTORY_TABLE."
         )
 
+    if execution_enabled:
+        if cognito is None:
+            raise SettingsError("Pipeline execution requires Cognito authentication.")
+        if run_history.backend != "dynamodb":
+            raise SettingsError("Pipeline execution requires DynamoDB run history.")
+        if state_machine_arn is None:
+            raise SettingsError(
+                "Pipeline execution requires PIPELINE_STATE_MACHINE_ARN."
+            )
+
     return Settings(
         api_env=api_env,
         cors_allowed_origins=origins,
-        pipeline_execution_enabled=False,
+        pipeline_execution_enabled=execution_enabled,
         enable_api_docs=enable_docs,
         cognito=cognito,
         rate_limits=_load_rate_limits(env),
         run_history=run_history,
-        pipeline_state_machine_arn=_load_state_machine_arn(env),
+        pipeline_state_machine_arn=state_machine_arn,
     )

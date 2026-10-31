@@ -16,7 +16,7 @@ from src.dynamodb_run_store import DynamoRunStore
 from src.executor import ExecutionStartError
 from src.executor_stepfunctions import StepFunctionsExecutor, reconcile_active_runs
 from src.run_store import RunStore
-from src.settings import Settings
+from src.settings import RunHistorySettings, Settings
 from tests import auth_helpers as h
 from tests.pipeline_harness import (
     RUN_HISTORY_TABLE_NAME,
@@ -197,3 +197,49 @@ def test_a_viewer_is_refused_before_the_disabled_check_and_an_anonymous_caller_i
     anonymous = client.post("/api/runs", json={"days_back": 2})
 
     assert (viewer.status_code, anonymous.status_code) == (403, 401)
+
+
+def test_enabled_api_initialises_step_functions_with_the_shared_store(tmp_path, monkeypatch):
+    store = RunStore(tmp_path / "enabled-runs.sqlite3")
+    monkeypatch.setattr(api, "_store", store)
+
+    settings = Settings(
+        api_env="local",
+        cognito=h.CONFIG,
+        pipeline_execution_enabled=True,
+        pipeline_state_machine_arn=STATE_MACHINE_ARN,
+        run_history=RunHistorySettings(
+            backend="dynamodb",
+            table=RUN_HISTORY_TABLE_NAME,
+            region="eu-west-1",
+        ),
+    )
+    provider = JwksKeyProvider("https://unused.invalid/jwks.json", fetch=h.jwks)
+    step_functions_client = MagicMock()
+    reconciliation_counts = {
+        "settled": 0,
+        "interrupted": 0,
+        "unchanged": 0,
+    }
+
+    with (
+        patch("boto3.client", return_value=step_functions_client) as create_client,
+        patch("src.executor_stepfunctions.StepFunctionsExecutor") as executor_class,
+        patch(
+            "src.executor_stepfunctions.reconcile_active_runs",
+            return_value=reconciliation_counts,
+        ) as reconcile,
+    ):
+        app = api.create_app(settings, key_provider=provider)
+
+        with TestClient(app):
+            create_client.assert_called_once_with(
+                "stepfunctions", region_name="eu-west-1"
+            )
+            executor_class.assert_called_once_with(
+                store, step_functions_client, STATE_MACHINE_ARN
+            )
+            reconcile.assert_called_once_with(
+                store, step_functions_client, STATE_MACHINE_ARN
+            )
+            assert app.state.executor is executor_class.return_value

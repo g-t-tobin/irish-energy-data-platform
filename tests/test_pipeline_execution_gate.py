@@ -153,8 +153,9 @@ def test_executor_dependency_is_the_only_path_to_execution(pipeline_spies):
         spy.assert_not_called()
 
 
-def test_environment_cannot_enable_execution(monkeypatch):
+def test_environment_cannot_enable_execution_without_cognito(monkeypatch):
+    monkeypatch.setenv("API_ENV", "local")
     monkeypatch.setenv("PIPELINE_EXECUTION_ENABLED", "true")
 
-    with pytest.raises(Exception, match="cannot be enabled"):
+    with pytest.raises(Exception, match="requires Cognito authentication"):
         load_settings()
