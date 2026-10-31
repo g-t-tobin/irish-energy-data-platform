@@ -49,7 +49,7 @@ class KeyProvider(Protocol):
 def _fetch_jwks(url: str) -> dict[str, Any]:
     if not url.startswith("https://"):
         raise AuthError("jwks_url_not_https")
-    with urllib.request.urlopen(url, timeout=JWKS_TIMEOUT_SECONDS) as response:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=JWKS_TIMEOUT_SECONDS) as response:
         return json.loads(response.read(JWKS_MAX_BYTES))
 
 
@@ -90,7 +90,7 @@ class JwksKeyProvider:
             raw_keys = document["keys"]
             if not isinstance(raw_keys, list):
                 raise TypeError("keys must be a list")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - fail closed on any JWKS retrieval or parsing failure
             logger.warning("JWKS retrieval failed: %s", type(exc).__name__)
             return
 
@@ -104,7 +104,7 @@ class JwksKeyProvider:
                     and raw.get("alg", ALGORITHM) == ALGORITHM
                 ):
                     keys[raw["kid"]] = jwt.PyJWK(raw).key
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 - skip malformed individual JWKS keys
                 continue
         if keys:
             self._keys = keys
@@ -217,13 +217,13 @@ def authenticate(request: Request) -> Principal:
     return principal
 
 
-def require_viewer(principal: Principal = Depends(authenticate)) -> Principal:
+def require_viewer(principal: Principal = Depends(authenticate)) -> Principal:  # noqa: B008
     if principal.role not in ROLES:
         raise HTTPException(status_code=403, detail="Insufficient permissions.")
     return principal
 
 
-def require_operator(principal: Principal = Depends(authenticate)) -> Principal:
+def require_operator(principal: Principal = Depends(authenticate)) -> Principal:  # noqa: B008
     if principal.role != "operator":
         raise HTTPException(status_code=403, detail="Insufficient permissions.")
     return principal

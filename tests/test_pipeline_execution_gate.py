@@ -3,15 +3,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.executor import DisabledExecutor, ExecutionDisabledError  # noqa: E402
-from src.run_store import RunStore  # noqa: E402
-from src.settings import Settings, load_settings  # noqa: E402
-from tests import auth_helpers  # noqa: E402
-from tests.auth_helpers import auth_header, token  # noqa: E402
+from src import api
+from src.auth import JwksKeyProvider
+from src.executor import DisabledExecutor, ExecutionDisabledError
+from src.run_store import RunStore
+from src.settings import Settings, load_settings
+from tests import auth_helpers
+from tests.auth_helpers import auth_header, token
 
 PIPELINE_ENTRY_POINTS = [
     "src.api.execute_pipeline",

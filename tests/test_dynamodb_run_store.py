@@ -252,10 +252,10 @@ def test_nothing_secret_or_token_shaped_is_stored(env):
 
 # Backend selection and API compatibility
 
-from src import api  # noqa: E402
-from src.run_store import RunStore  # noqa: E402
-from src.run_store_factory import build_run_store  # noqa: E402
-from src.settings import RunHistorySettings  # noqa: E402
+from src import api
+from src.run_store import RunStore
+from src.run_store_factory import build_run_store
+from src.settings import RunHistorySettings
 
 
 def test_factory_defaults_to_sqlite_and_never_touches_aws():

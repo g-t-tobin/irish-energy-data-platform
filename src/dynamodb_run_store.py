@@ -14,7 +14,7 @@ import hashlib
 import time
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -55,7 +55,7 @@ def _s(value: str) -> dict[str, str]:
     return {"S": value}
 
 
-def _n(value: int | float) -> dict[str, str]:
+def _n(value: float) -> dict[str, str]:
     return {"N": str(value)}
 
 
@@ -90,7 +90,7 @@ class DynamoRunStore:
     # -- helpers ---------------------------------------------------------
 
     def _iso(self, now: float) -> str:
-        return datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="microseconds")
+        return datetime.fromtimestamp(now, UTC).isoformat(timespec="microseconds")
 
     def _run_key(self, run_id: str) -> dict[str, Any]:
         return {schema.PARTITION_KEY: _s(schema.RUN_PK_PREFIX + run_id), schema.SORT_KEY: _s(schema.RUN_SK)}

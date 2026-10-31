@@ -2,11 +2,12 @@
 
 import copy
 import io
+import math
 import os
 import re
 import threading
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -69,7 +70,7 @@ def expected_observations(day: str, interval: int | None) -> int | None:
         datetime.min.time(),
         tzinfo=SOURCE_TIMEZONE,
     )
-    minutes = (end.astimezone(timezone.utc) - start.astimezone(timezone.utc)) / (
+    minutes = (end.astimezone(UTC) - start.astimezone(UTC)) / (
         timedelta(minutes=1)
     )
     return int(minutes // interval)
@@ -181,7 +182,7 @@ def _cache_ttl() -> float:
         )
     except ValueError:
         return DEFAULT_CACHE_TTL_SECONDS
-    if ttl != ttl or ttl in (float("inf"), float("-inf")):
+    if not math.isfinite(ttl):
         return DEFAULT_CACHE_TTL_SECONDS
     return min(ttl, MAX_CACHE_TTL_SECONDS)
 

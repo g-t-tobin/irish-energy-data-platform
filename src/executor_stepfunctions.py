@@ -99,7 +99,7 @@ class StepFunctionsExecutor:
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ExecutionAlreadyExists":
                 self._fail_start(run_id, exc)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - mark run failed on unexpected startup errors
             self._fail_start(run_id, exc)
         return {"run_id": run_id, "status": "queued"}
 

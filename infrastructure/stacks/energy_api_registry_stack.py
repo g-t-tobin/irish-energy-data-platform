@@ -3,7 +3,6 @@
 from aws_cdk import CfnOutput, Duration, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_ecr as ecr
 from constructs import Construct
-
 from energy_config import ECR_REPOSITORY_NAME
 
 

@@ -6,13 +6,13 @@ from unittest.mock import patch
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.run_store import RunStore  # noqa: E402
-from src.settings import Settings, SettingsError, load_settings  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src import api
+from src.auth import JwksKeyProvider
+from src.run_store import RunStore
+from src.settings import Settings, SettingsError, load_settings
+from tests import auth_helpers as h
 
 ARN = "arn:aws:states:eu-west-1:851725545966:stateMachine:irish-energy-pipeline"
 LOCAL = {"API_ENV": "local"}

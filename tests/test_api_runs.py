@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 pytest.importorskip("fastapi")
-from fastapi import HTTPException  # noqa: E402
+from fastapi import HTTPException
 
-from src import api  # noqa: E402
-from src.run_store import RunStore, RunStoreError  # noqa: E402
-from src.settings import Settings  # noqa: E402
+from src import api
+from src.run_store import RunStore, RunStoreError
+from src.settings import Settings
 
 FRONTEND_FIELDS = {"run_id", "status", "stage", "days_back", "created_at"}
 

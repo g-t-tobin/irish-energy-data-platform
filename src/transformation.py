@@ -4,7 +4,7 @@ import io
 import json
 import math
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 import pandas as pd
@@ -19,7 +19,7 @@ def transform_demand_payload(payload: dict) -> pd.DataFrame:
     rows = payload.get("Rows")
 
     if not isinstance(rows, list):
-        raise ValueError("Payload must contain a Rows list")
+        raise ValueError("Payload must contain a Rows list")  # noqa: TRY004 - invalid transformation payload
 
     if not rows:
         raise ValueError("Payload contains no demand records")
@@ -91,7 +91,7 @@ def save_silver_to_s3(df: pd.DataFrame, bucket: str, run_id: str | None = None) 
     if run_id is not None and not RUN_ID_PATTERN.match(run_id):
         raise ValueError("run_id must be a UUID")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     name = run_id or f"{now:%Y%m%dT%H%M%SZ}"
     key = (
         "silver/eirgrid/demand_actual/"

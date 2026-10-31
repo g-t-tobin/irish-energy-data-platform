@@ -1,18 +1,17 @@
 """Offline checks of the DynamoDB run-history table (no AWS access)."""
 
 import json
+from pathlib import Path
 
+import aws_cdk as cdk
 import pytest
+from aws_cdk.assertions import Template
+from energy_config import RUN_HISTORY_TABLE_NAME
+from stacks.energy_run_history_stack import EnergyRunHistoryStack
 
-from tests.test_energy_edge_infrastructure import ACCOUNT, GAME_HOSTS, run_app  # noqa: F401  (adds infrastructure/ to sys.path)
-
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Template  # noqa: E402
-
-from energy_config import RUN_HISTORY_TABLE_NAME  # noqa: E402
-from infrastructure.run_control import spec  # noqa: E402
-from src import run_history_schema as schema  # noqa: E402
-from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
+from infrastructure.run_control import spec
+from src import run_history_schema as schema
+from tests.test_energy_edge_infrastructure import ACCOUNT, GAME_HOSTS, run_app
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +62,7 @@ def test_listing_index_is_the_one_the_store_queries(template):
             "Projection": {"ProjectionType": "ALL"},
         }
     ]
-    source = open("src/dynamodb_run_store.py").read()
+    source = Path("src/dynamodb_run_store.py").read_text()
     assert 'IndexName=schema.LIST_INDEX' in source and 'KeyConditionExpression="gsi1pk = :pk"' in source
 
 
@@ -72,7 +71,7 @@ def test_ttl_is_enabled_on_the_attribute_the_store_writes(template):
 
     assert props["TimeToLiveSpecification"] == {"AttributeName": "expires_at", "Enabled": True}
     assert schema.TTL_ATTRIBUTE == "expires_at"
-    assert "expires_at" in open("src/dynamodb_run_store.py").read()
+    assert "expires_at" in Path("src/dynamodb_run_store.py").read_text()
 
 
 def test_encryption_at_rest_uses_the_aws_managed_key(template):

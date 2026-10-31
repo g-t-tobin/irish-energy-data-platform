@@ -7,8 +7,8 @@ deletion protection and point-in-time recovery, and is deployed before the API.
 from aws_cdk import CfnOutput, RemovalPolicy, Stack, Tags
 from aws_cdk import aws_dynamodb as dynamodb
 from constructs import Construct
-
 from energy_config import RUN_HISTORY_TABLE_NAME
+
 from infrastructure.run_control import spec
 from src import run_history_schema as schema
 

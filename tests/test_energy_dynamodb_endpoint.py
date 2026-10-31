@@ -2,22 +2,20 @@
 
 import json
 
+import aws_cdk as cdk
 import pytest
+from aws_cdk.assertions import Template
+from stacks.energy_edge_stacks import EnergyApiEdgeStack
 
-from tests.test_energy_api_service_infrastructure import (  # noqa: F401
+from tests.test_energy_api_service_infrastructure import (
+    ENV,
     SERVICE,
     config,
-    ENV,
     only,
     policy_for,
     resources,
     synth,
 )
-
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Template  # noqa: E402
-
-from stacks.energy_edge_stacks import EnergyApiEdgeStack  # noqa: E402
 
 TABLE_ARN_IMPORT = "IrishEnergyRunHistoryStack:ExportsOutputFnGetAttRunHistoryTableFD4DA44DArn6CF8D0FC"
 ALLOWED_ACTIONS = {
@@ -56,7 +54,7 @@ def route_tables_of_ecs_subnets(template):
 
 
 def test_a_dynamodb_gateway_endpoint_exists_in_the_ecs_vpc(edge):
-    name, props = endpoints(edge)["dynamodb"]
+    _name, props = endpoints(edge)["dynamodb"]
 
     assert props["VpcEndpointType"] == "Gateway"
     (vpc_name,) = resources(edge, "AWS::EC2::VPC")
@@ -221,8 +219,8 @@ def test_without_the_service_there_are_no_endpoints():
 
 
 def test_the_endpoint_lives_only_in_the_api_edge_stack(tmp_path):
-    from tests.test_energy_edge_infrastructure import run_app
     from tests.test_energy_api_service_infrastructure import CERTS, SERVICE_CTX
+    from tests.test_energy_edge_infrastructure import run_app
 
     result, names = run_app(tmp_path, {**CERTS, **SERVICE_CTX})
 

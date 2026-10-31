@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import requests
@@ -29,7 +29,7 @@ def fetch_demand_data(days_back: int = 1) -> dict:
     if days_back < 1:
         raise ValueError("days_back must be at least 1")
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     params = {
         "area": "demandActual",
         "region": "ROI",
@@ -56,7 +56,7 @@ def fetch_demand_data(days_back: int = 1) -> dict:
     payload = response.json()
 
     if not isinstance(payload, dict):
-        raise ValueError("Unexpected EirGrid response: expected a JSON object")
+        raise ValueError("Unexpected EirGrid response: expected a JSON object")  # noqa: TRY004 - malformed upstream response
 
     if payload.get("Status") == "Error" or payload.get("ErrorMessage"):
         raise ValueError(
@@ -64,7 +64,7 @@ def fetch_demand_data(days_back: int = 1) -> dict:
         )
 
     if not isinstance(payload.get("Rows"), list):
-        raise ValueError("Unexpected EirGrid response: expected a Rows list")
+        raise ValueError("Unexpected EirGrid response: expected a Rows list")  # noqa: TRY004 - malformed upstream response
 
     return payload
 
@@ -80,7 +80,7 @@ def save_to_s3(payload: dict, bucket: str, run_id: str | None = None) -> str:
     if run_id is not None and not RUN_ID_PATTERN.match(run_id):
         raise ValueError("run_id must be a UUID")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     name = run_id or f"{now:%Y%m%dT%H%M%SZ}"
     key = (
         f"bronze/eirgrid/demand_actual/"

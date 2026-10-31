@@ -263,7 +263,7 @@ def test_image_builds_and_runs_as_non_root_without_dev_files():
     subprocess.run(["docker", "build", "--load", "--platform", "linux/amd64", "-t", tag, str(REPO)], check=True, timeout=900)
     listing = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "sh", tag, "-c", "id -u; ls -A /app; ls /app/tests /app/.env 2>&1"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=120, check=False,
     ).stdout
 
     assert listing.splitlines()[0] == "10001"

@@ -10,10 +10,11 @@ import os
 import re
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Protocol
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / ".local" / "run_history.sqlite3"
 ACTIVE_STATUSES = ("queued", "running")
@@ -115,7 +116,7 @@ class RunHistory(Protocol):
 
 def validate_create_args(days_back: Any, idempotency_key: str | None) -> None:
     if isinstance(days_back, bool) or not isinstance(days_back, int):
-        raise ValueError("days_back must be an integer")
+        raise ValueError("days_back must be an integer")  # noqa: TRY004 - preserve run-store validation contract
     if not 1 <= days_back <= 30:
         raise ValueError("days_back must be between 1 and 30")
     if idempotency_key is not None and not _IDEMPOTENCY_KEY_RE.match(idempotency_key):
@@ -131,7 +132,7 @@ class RunStoreError(Exception):
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def safe_error_message(exc: BaseException) -> str:
@@ -210,7 +211,7 @@ def default_db_path() -> Path:
 
 
 def _to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    return {key: row[key] for key in row.keys() if row[key] is not None}
+    return {key: row[key] for key in row.keys() if row[key] is not None}  # noqa: SIM118 - sqlite3.Row iteration yields values, not column names
 
 
 class RunStore:
@@ -271,8 +272,8 @@ class RunStore:
         with self._write() as conn:
             if idempotency_key:
                 cutoff = datetime.fromtimestamp(
-                    datetime.now(timezone.utc).timestamp() - IDEMPOTENCY_WINDOW_SECONDS,
-                    timezone.utc,
+                    datetime.now(UTC).timestamp() - IDEMPOTENCY_WINDOW_SECONDS,
+                    UTC,
                 ).isoformat()
                 existing = conn.execute(
                     "SELECT * FROM runs WHERE idempotency_key = ?"

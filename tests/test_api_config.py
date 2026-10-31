@@ -1,11 +1,10 @@
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.settings import load_settings  # noqa: E402
-
+from src import api
+from src.settings import load_settings
 
 COGNITO_ENV = {
     "COGNITO_REGION": "eu-west-1",

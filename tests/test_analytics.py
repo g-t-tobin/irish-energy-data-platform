@@ -143,9 +143,11 @@ def test_empty_gold_layer_returns_empty_list(env):
 def test_requires_bucket(monkeypatch):
     monkeypatch.delenv("S3_BUCKET", raising=False)
 
-    with patch("src.analytics.boto3.client") as client:
-        with pytest.raises(AnalyticsUnavailable, match="S3_BUCKET"):
-            read_gold_daily_demand()
+    with (
+        patch("src.analytics.boto3.client") as client,
+        pytest.raises(AnalyticsUnavailable, match="S3_BUCKET"),
+    ):
+        read_gold_daily_demand()
 
     client.assert_not_called()
 
@@ -157,9 +159,11 @@ def test_access_denied_is_reported_without_details(env):
         "ListObjectsV2",
     )
 
-    with patch("src.analytics.boto3.client", return_value=s3):
-        with pytest.raises(AnalyticsUnavailable) as exc:
-            read_gold_daily_demand()
+    with (
+        patch("src.analytics.boto3.client", return_value=s3),
+        pytest.raises(AnalyticsUnavailable) as exc,
+    ):
+        read_gold_daily_demand()
 
     assert "AccessDenied" in str(exc.value)
     assert "secret detail" not in str(exc.value)
@@ -170,9 +174,11 @@ def test_missing_columns_are_rejected(env):
     pd.DataFrame({"date": ["2026-10-29"]}).to_parquet(buffer, index=False)
     s3 = _s3({_key("2026-10-29"): buffer.getvalue()})
 
-    with patch("src.analytics.boto3.client", return_value=s3):
-        with pytest.raises(AnalyticsUnavailable, match="missing columns"):
-            read_gold_daily_demand()
+    with (
+        patch("src.analytics.boto3.client", return_value=s3),
+        pytest.raises(AnalyticsUnavailable, match="missing columns"),
+    ):
+        read_gold_daily_demand()
 
 
 def test_endpoint_returns_503_when_unavailable():
@@ -184,9 +190,8 @@ def test_endpoint_returns_503_when_unavailable():
     with patch(
         "src.analytics.read_gold_daily_demand",
         side_effect=AnalyticsUnavailable("nope"),
-    ):
-        with pytest.raises(HTTPException) as exc:
-            daily_demand(days=30)
+    ), pytest.raises(HTTPException) as exc:
+        daily_demand(days=30)
 
     assert exc.value.status_code == 503
     assert exc.value.detail == "Gold analytics are temporarily unavailable."

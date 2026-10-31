@@ -104,9 +104,9 @@ def test_run_pipeline_stops_after_stage_failure(env, failing):
         patch("src.pipeline.process_bronze_object", mocks["silver"]),
         patch("src.pipeline.process_silver_object", mocks["gold"]),
         patch("src.pipeline.register_gold_partition", register),
+        pytest.raises(RuntimeError, match="boom"),
     ):
-        with pytest.raises(RuntimeError, match="boom"):
-            run_pipeline()
+        run_pipeline()
 
     for later in order[order.index(failing) + 1:]:
         mocks[later].assert_not_called()
@@ -122,10 +122,9 @@ def test_run_pipeline_propagates_registration_failure(env):
         patch(
             "src.pipeline.register_gold_partition",
             side_effect=RuntimeError("glue down"),
-        ),
+        ),pytest.raises(RuntimeError, match="glue down")
     ):
-        with pytest.raises(RuntimeError, match="glue down"):
-            run_pipeline()
+        run_pipeline()
 
 
 def test_register_gold_partition_creates_partition():
@@ -169,9 +168,11 @@ def test_register_gold_partition_preserves_table_descriptor():
 def test_register_gold_partition_rejects_invalid_calendar_date(run_date):
     key = f"gold/eirgrid/daily_demand/run_date={run_date}/f.parquet"
 
-    with patch("src.pipeline.boto3.client") as client:
-        with pytest.raises(ValueError, match="Invalid run_date"):
-            register_gold_partition("test-bucket", key)
+    with (
+        patch("src.pipeline.boto3.client") as client,
+        pytest.raises(ValueError, match="Invalid run_date"),
+    ):
+        register_gold_partition("test-bucket", key)
 
     client.assert_not_called()
 
@@ -183,9 +184,11 @@ def test_register_gold_partition_rejects_incomplete_descriptor(field):
     glue = _glue_client()
     del glue.get_table.return_value["Table"]["StorageDescriptor"][field]
 
-    with patch("src.pipeline.boto3.client", return_value=glue):
-        with pytest.raises(ValueError, match=field):
-            register_gold_partition("test-bucket", GOLD_KEY)
+    with (
+        patch("src.pipeline.boto3.client", return_value=glue),
+        pytest.raises(ValueError, match=field),
+    ):
+        register_gold_partition("test-bucket", GOLD_KEY)
 
     glue.create_partition.assert_not_called()
 
@@ -194,9 +197,11 @@ def test_register_gold_partition_rejects_missing_descriptor():
     glue = _glue_client()
     glue.get_table.return_value = {"Table": {}}
 
-    with patch("src.pipeline.boto3.client", return_value=glue):
-        with pytest.raises(ValueError, match="missing"):
-            register_gold_partition("test-bucket", GOLD_KEY)
+    with (
+        patch("src.pipeline.boto3.client", return_value=glue),
+        pytest.raises(ValueError, match="missing"),
+    ):
+        register_gold_partition("test-bucket", GOLD_KEY)
 
     glue.create_partition.assert_not_called()
 
@@ -219,15 +224,19 @@ def test_register_gold_partition_does_not_hide_other_errors():
         "CreatePartition",
     )
 
-    with patch("src.pipeline.boto3.client", return_value=glue):
-        with pytest.raises(ClientError, match="AccessDenied"):
-            register_gold_partition("test-bucket", GOLD_KEY)
+    with (
+        patch("src.pipeline.boto3.client", return_value=glue),
+        pytest.raises(ClientError, match="AccessDenied"),
+    ):
+        register_gold_partition("test-bucket", GOLD_KEY)
 
 
 def test_register_gold_partition_rejects_unexpected_key():
-    with patch("src.pipeline.boto3.client") as client:
-        with pytest.raises(ValueError, match="Unexpected Gold key"):
-            register_gold_partition("test-bucket", "gold/other/file.parquet")
+    with (
+        patch("src.pipeline.boto3.client") as client,
+        pytest.raises(ValueError, match="Unexpected Gold key"),
+    ):
+        register_gold_partition("test-bucket", "gold/other/file.parquet")
 
     client.assert_not_called()
 
@@ -283,9 +292,11 @@ def test_register_partition_command_does_not_run_pipeline(env):
 
 
 def test_register_partition_command_requires_gold_key(env):
-    with patch("src.pipeline.register_gold_partition") as reg:
-        with pytest.raises(SystemExit) as exc:
-            main(["register-partition"])
+    with (
+        patch("src.pipeline.register_gold_partition") as reg,
+        pytest.raises(SystemExit) as exc,
+    ):
+        main(["register-partition"])
 
     assert exc.value.code == 2
     reg.assert_not_called()
@@ -300,9 +311,8 @@ def test_register_partition_command_requires_gold_key(env):
     ],
 )
 def test_register_existing_rejects_malformed_key_without_aws(env, key):
-    with patch("src.pipeline.boto3.client") as client:
-        with pytest.raises(ValueError):
-            register_existing_gold_partition(key)
+    with patch("src.pipeline.boto3.client") as client, pytest.raises(ValueError):
+        register_existing_gold_partition(key)
 
     client.assert_not_called()
 
@@ -310,9 +320,11 @@ def test_register_existing_rejects_malformed_key_without_aws(env, key):
 def test_register_existing_requires_bucket(monkeypatch):
     monkeypatch.delenv("S3_BUCKET", raising=False)
 
-    with patch("src.pipeline.register_gold_partition") as reg:
-        with pytest.raises(ValueError, match="S3_BUCKET"):
-            register_existing_gold_partition(GOLD_KEY)
+    with (
+        patch("src.pipeline.register_gold_partition") as reg,
+        pytest.raises(ValueError, match="S3_BUCKET"),
+    ):
+        register_existing_gold_partition(GOLD_KEY)
 
     reg.assert_not_called()
 
@@ -335,9 +347,11 @@ def test_register_existing_propagates_aws_errors(env):
         "CreatePartition",
     )
 
-    with patch("src.pipeline.boto3.client", return_value=glue):
-        with pytest.raises(ClientError, match="AccessDenied"):
-            register_existing_gold_partition(GOLD_KEY)
+    with (
+        patch("src.pipeline.boto3.client", return_value=glue),
+        pytest.raises(ClientError, match="AccessDenied"),
+    ):
+        register_existing_gold_partition(GOLD_KEY)
 
 
 def test_default_main_runs_full_pipeline():

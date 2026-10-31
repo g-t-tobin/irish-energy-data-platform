@@ -3,12 +3,12 @@ from unittest.mock import patch
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.run_store import RunStore  # noqa: E402
-from src.settings import Settings  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src import api
+from src.run_store import RunStore
+from src.settings import Settings
+from tests import auth_helpers as h
 
 PROTECTED_GETS = ["/api/runs", "/api/runs/some-id", "/api/analytics/daily-demand"]
 VIEWER = h.auth_header(h.token(groups=["viewer"]))

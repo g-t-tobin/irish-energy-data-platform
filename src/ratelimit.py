@@ -79,7 +79,7 @@ def rate_limit(bucket: str):
     """Per-user limit, applied after authentication and role checks."""
 
     def dependency(
-        request: Request, principal: Principal = Depends(authenticate)
+        request: Request, principal: Principal = Depends(authenticate)  # noqa: B008
     ) -> None:
         limiter: RateLimiter | None = getattr(request.app.state, "rate_limiter", None)
         if limiter is None:

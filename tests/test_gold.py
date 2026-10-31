@@ -1,5 +1,5 @@
 import io
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -94,9 +94,8 @@ def test_process_silver_object_reads_key_and_writes_gold():
 
 @pytest.mark.parametrize("bucket,key", [("", "k"), ("b", "")])
 def test_process_silver_object_requires_bucket_and_key(bucket, key):
-    with patch("src.gold.boto3.client") as client:
-        with pytest.raises(ValueError):
-            process_silver_object(bucket, key)
+    with patch("src.gold.boto3.client") as client, pytest.raises(ValueError):
+        process_silver_object(bucket, key)
     client.assert_not_called()
 
 
@@ -107,9 +106,11 @@ def test_process_silver_object_does_not_write_on_invalid_data():
     bad.to_parquet(buffer, index=False)
     s3.get_object.return_value = {"Body": io.BytesIO(buffer.getvalue())}
 
-    with patch("src.gold.boto3.client", return_value=s3):
-        with pytest.raises(ValueError, match="Missing"):
-            process_silver_object("bucket", "silver/bad.parquet")
+    with (
+        patch("src.gold.boto3.client", return_value=s3),
+        pytest.raises(ValueError, match="Missing"),
+    ):
+        process_silver_object("bucket", "silver/bad.parquet")
 
     s3.put_object.assert_not_called()
 
@@ -144,15 +145,15 @@ def _run_at(moment):
 
 
 def test_gold_key_is_canonical_and_uses_utc_date():
-    key, s3 = _run_at(datetime(2026, 10, 29, 23, 59, 59, tzinfo=timezone.utc))
+    key, s3 = _run_at(datetime(2026, 10, 29, 23, 59, 59, tzinfo=UTC))
 
     assert key == "gold/eirgrid/daily_demand/run_date=2026-10-29/daily_demand.parquet"
     assert s3.put_object.call_args.kwargs["Key"] == key
 
 
 def test_gold_key_is_deterministic_and_overwrites_same_object():
-    first, s3_first = _run_at(datetime(2026, 10, 29, 0, 0, 1, tzinfo=timezone.utc))
-    second, s3_second = _run_at(datetime(2026, 10, 29, 18, 30, 0, tzinfo=timezone.utc))
+    first, s3_first = _run_at(datetime(2026, 10, 29, 0, 0, 1, tzinfo=UTC))
+    second, s3_second = _run_at(datetime(2026, 10, 29, 18, 30, 0, tzinfo=UTC))
 
     assert first == second
     s3_first.put_object.assert_called_once()
@@ -161,15 +162,15 @@ def test_gold_key_is_deterministic_and_overwrites_same_object():
 
 
 def test_gold_key_changes_with_utc_date():
-    first, _ = _run_at(datetime(2026, 10, 29, 23, 59, tzinfo=timezone.utc))
-    second, _ = _run_at(datetime(2026, 10, 30, 0, 0, tzinfo=timezone.utc))
+    first, _ = _run_at(datetime(2026, 10, 29, 23, 59, tzinfo=UTC))
+    second, _ = _run_at(datetime(2026, 10, 30, 0, 0, tzinfo=UTC))
 
     assert first != second
     assert second.endswith("run_date=2026-10-30/daily_demand.parquet")
 
 
 def test_gold_output_keeps_parquet_settings():
-    _, s3 = _run_at(datetime(2026, 10, 29, tzinfo=timezone.utc))
+    _, s3 = _run_at(datetime(2026, 10, 29, tzinfo=UTC))
     kwargs = s3.put_object.call_args.kwargs
 
     assert kwargs["ContentType"] == "application/vnd.apache.parquet"

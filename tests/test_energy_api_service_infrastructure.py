@@ -2,35 +2,37 @@
 
 import json
 import re
+import sys
+from pathlib import Path
 
+INFRA = Path(__file__).resolve().parents[1] / "infrastructure"
+sys.path.insert(0, str(INFRA))
+
+import aws_cdk as cdk
 import pytest
-
-from tests.test_energy_edge_infrastructure import (  # noqa: F401  (also puts infrastructure/ on sys.path)
-    ACCOUNT,
-    API_HOSTNAME,
-    GAME_HOSTS,
-    INFRA,
-    config,
-    run_app,
-    API_CERT,
-    FRONTEND_CERT,
-)
-
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Match, Template  # noqa: E402
-
-from energy_config import (  # noqa: E402
+from aws_cdk.assertions import Match, Template
+from energy_config import (
     STATE_MACHINE_ARN,
     ApiServiceConfig,
     ConfigError,
     load_service_config,
 )
-from stacks.energy_api_registry_stack import EnergyApiRegistryStack  # noqa: E402
-from stacks.energy_edge_stacks import EnergyApiEdgeStack  # noqa: E402
-from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
+from stacks.energy_api_registry_stack import EnergyApiRegistryStack
+from stacks.energy_edge_stacks import EnergyApiEdgeStack
+from stacks.energy_run_history_stack import EnergyRunHistoryStack
 
-from src.healthcheck import main as healthcheck_main  # noqa: E402,F401
-from src.settings import load_settings  # noqa: E402
+from src.healthcheck import main as healthcheck_main  # noqa: F401
+from src.settings import load_settings
+from tests.test_energy_edge_infrastructure import (
+    ACCOUNT,
+    API_CERT,
+    API_HOSTNAME,
+    FRONTEND_CERT,
+    GAME_HOSTS,
+    INFRA,
+    config,
+    run_app,
+)
 
 REPO = INFRA.parent
 SERVICE = ApiServiceConfig(

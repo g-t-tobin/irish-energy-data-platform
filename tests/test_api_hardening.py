@@ -8,23 +8,23 @@ import pytest
 from botocore.exceptions import ClientError
 
 pytest.importorskip("httpx")
-import requests  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+import requests
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-from src import analytics, api  # noqa: E402
-from src.analytics import AnalyticsUnavailable, clear_analytics_cache  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.logging_config import JsonFormatter  # noqa: E402
-from src.run_store import (  # noqa: E402
+from src import analytics, api
+from src.analytics import AnalyticsUnavailable, clear_analytics_cache
+from src.auth import JwksKeyProvider
+from src.logging_config import JsonFormatter
+from src.run_store import (
     PUBLIC_ERROR_MESSAGES,
     RunStore,
     RunStoreError,
     classify_error,
     to_public_run,
 )
-from src.settings import Settings, SettingsError  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src.settings import Settings, SettingsError
+from tests import auth_helpers as h
 
 VIEWER = h.auth_header(h.token(groups=["viewer"]))
 BUCKET = "irish-energy-data-platform-123456789012"

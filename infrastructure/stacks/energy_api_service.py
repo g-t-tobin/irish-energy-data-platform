@@ -15,7 +15,6 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_logs as logs
 from aws_cdk import aws_secretsmanager as secretsmanager
 from constructs import Construct
-
 from energy_config import (
     ACCOUNT,
     CONTAINER_USER,
@@ -25,6 +24,7 @@ from energy_config import (
     STATE_MACHINE_EXECUTION_ARN_PATTERN,
     ApiServiceConfig,
 )
+
 from src import run_history_schema as schema
 
 _RETENTION = {

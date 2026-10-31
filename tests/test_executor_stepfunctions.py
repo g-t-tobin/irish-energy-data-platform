@@ -6,18 +6,18 @@ import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.dynamodb_run_store import DynamoRunStore  # noqa: E402
-from src.executor import DisabledExecutor, ExecutionStartError  # noqa: E402
-from src.executor_stepfunctions import StepFunctionsExecutor, reconcile_active_runs  # noqa: E402
-from src.run_store import ActiveRunError  # noqa: E402
-from src.settings import Settings  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
-from tests.fake_dynamodb import FakeDynamoDB  # noqa: E402
-from tests.test_run_store_contract import Clock  # noqa: E402
+from src import api
+from src.auth import JwksKeyProvider
+from src.dynamodb_run_store import DynamoRunStore
+from src.executor import DisabledExecutor, ExecutionStartError
+from src.executor_stepfunctions import StepFunctionsExecutor, reconcile_active_runs
+from src.run_store import ActiveRunError
+from src.settings import Settings
+from tests import auth_helpers as h
+from tests.fake_dynamodb import FakeDynamoDB
+from tests.test_run_store_contract import Clock
 
 ARN = "arn:aws:states:eu-west-1:123456789012:stateMachine:run-pipeline"
 
@@ -222,7 +222,7 @@ def test_roles_are_still_enforced_with_a_real_executor(env):
 
 
 def test_api_duplicate_conflict_and_failure_mapping(env):
-    store, sfn, executor = env
+    _store, sfn, executor = env
     client = _client(executor)
     headers = {**OPERATOR, "Idempotency-Key": "client-retry-0001"}
 

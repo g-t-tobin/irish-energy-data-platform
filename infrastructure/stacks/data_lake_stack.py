@@ -1,9 +1,8 @@
 """CDK resources for the Irish Energy Analytics data platform."""
 
 from aws_cdk import Stack
-from aws_cdk import aws_glue as glue
-from aws_cdk import aws_s3 as s3
 from aws_cdk import aws_athena as athena
+from aws_cdk import aws_glue as glue
 from constructs import Construct
 
 
@@ -19,12 +18,6 @@ class DataLakeStack(Stack):
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
-
-        bucket = s3.Bucket.from_bucket_name(
-            self,
-            "ExistingDataLakeBucket",
-            bucket_name,
-        )
 
         database_name = "irish_energy_analytics"
         table_name = "daily_electricity_demand"

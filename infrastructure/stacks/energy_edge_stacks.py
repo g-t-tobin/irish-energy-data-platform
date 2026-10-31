@@ -17,8 +17,8 @@ from aws_cdk import aws_elasticloadbalancingv2 as elbv2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_s3 as s3
 from constructs import Construct
-
 from energy_config import ApiServiceConfig, EdgeConfig
+
 from src import run_history_schema as schema
 from stacks.energy_api_service import ApiService
 

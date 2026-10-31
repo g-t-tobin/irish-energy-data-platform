@@ -12,10 +12,9 @@ import pytest
 INFRA = Path(__file__).resolve().parents[1] / "infrastructure"
 sys.path.insert(0, str(INFRA))
 
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Match, Template  # noqa: E402
-
-from energy_config import (  # noqa: E402
+import aws_cdk as cdk
+from aws_cdk.assertions import Match, Template
+from energy_config import (
     ACCOUNT,
     API_HOSTNAME,
     DOMAIN,
@@ -25,7 +24,7 @@ from energy_config import (  # noqa: E402
     validate_certificate_arn,
     validate_hostname,
 )
-from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack  # noqa: E402
+from stacks.energy_edge_stacks import EnergyApiEdgeStack, EnergyFrontendStack
 
 API_CERT = f"arn:aws:acm:eu-west-1:{ACCOUNT}:certificate/00000000-0000-4000-8000-000000000001"
 FRONTEND_CERT = f"arn:aws:acm:us-east-1:{ACCOUNT}:certificate/00000000-0000-4000-8000-000000000002"
@@ -320,7 +319,8 @@ def run_app(tmp_path, ctx=None, env_extra=None):
     if ctx is not None:
         env["CDK_CONTEXT_JSON"] = json.dumps(ctx)
     result = subprocess.run(
-        [sys.executable, "app.py"], cwd=INFRA, env=env, capture_output=True, text=True, timeout=300
+        [sys.executable, "app.py"], cwd=INFRA, env=env, capture_output=True, text=True, timeout=300,
+        check=False,
     )
     return result, sorted(p.name for p in tmp_path.glob("*.template.json"))
 

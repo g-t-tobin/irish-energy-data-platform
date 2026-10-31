@@ -4,14 +4,10 @@ import fnmatch
 import json
 from pathlib import Path
 
+import aws_cdk as cdk
 import pytest
-
-from tests.test_energy_edge_infrastructure import ACCOUNT  # noqa: F401  (also puts infrastructure/ on sys.path)
-
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Template  # noqa: E402
-
-from energy_config import (  # noqa: E402
+from aws_cdk.assertions import Template
+from energy_config import (
     BRONZE_PREFIX,
     DATA_LAKE_BUCKET,
     GOLD_PREFIX,
@@ -19,11 +15,12 @@ from energy_config import (  # noqa: E402
     PIPELINE_STAGES,
     SILVER_PREFIX,
 )
-from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
-from tests import test_pipeline_stages as handler_tests  # noqa: E402
-from tests.test_energy_api_service_infrastructure import ENV, as_list, policy_for, synth  # noqa: E402
+from stacks.energy_pipeline_stack import EnergyPipelineStack
 
-import src.pipeline_stages as stage_module  # noqa: E402
+import src.pipeline_stages as stage_module
+from tests import test_pipeline_stages as handler_tests
+from tests.test_energy_api_service_infrastructure import ENV, as_list, policy_for, synth
+from tests.test_energy_edge_infrastructure import ACCOUNT  # noqa: F401  (also puts infrastructure/ on sys.path)
 
 BUCKET_ARN = f"arn:aws:s3:::{DATA_LAKE_BUCKET}"
 GLUE = "arn:aws:glue:eu-west-1:851725545966"

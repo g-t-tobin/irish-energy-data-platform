@@ -14,7 +14,6 @@ from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from constructs import Construct
-
 from energy_config import (
     ACCOUNT,
     BRONZE_PREFIX,

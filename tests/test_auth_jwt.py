@@ -4,11 +4,11 @@ import logging
 import pytest
 
 pytest.importorskip("jwt")
-import jwt  # noqa: E402
+import jwt
 
-from src import auth  # noqa: E402
-from src.auth import AuthError, JwksKeyProvider, TokenVerifier  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src import auth
+from src.auth import AuthError, JwksKeyProvider, TokenVerifier
+from tests import auth_helpers as h
 
 
 class Clock:
@@ -72,7 +72,7 @@ def test_incorrectly_signed_token_rejected():
 
 
 def test_tampered_payload_rejected():
-    header, payload, signature = h.token(groups=["viewer"]).split(".")
+    header, _payload, signature = h.token(groups=["viewer"]).split(".")
     forged = jwt.api_jws.base64url_encode(
         json.dumps({**h.claims(), "cognito:groups": ["operator"]}).encode()
     ).decode()

@@ -8,33 +8,31 @@ import copy
 import json
 import re
 
+import aws_cdk as cdk
 import pytest
-
-from tests.test_energy_edge_infrastructure import ACCOUNT  # noqa: F401  (also puts infrastructure/ on sys.path)
-
-import aws_cdk as cdk  # noqa: E402
-from aws_cdk.assertions import Template  # noqa: E402
-
-from energy_config import (  # noqa: E402
+from aws_cdk.assertions import Template
+from energy_config import (
     PIPELINE_STAGES,
     RUN_HISTORY_TABLE_NAME,
     STATE_MACHINE_ARN,
     STATE_MACHINE_NAME,
 )
-from infrastructure.run_control import spec  # noqa: E402
-from src import pipeline_stages as stages  # noqa: E402
-from src import run_history_schema as schema  # noqa: E402
-from src.dynamodb_run_store import DynamoRunStore  # noqa: E402
-from src.executor_stepfunctions import _ARN_RE  # noqa: E402
-from src.run_store import TERMINAL_STATUSES, UPDATABLE_FIELDS  # noqa: E402
-from stacks.energy_pipeline_stack import EnergyPipelineStack  # noqa: E402
-from stacks.energy_run_history_stack import EnergyRunHistoryStack  # noqa: E402
-from stacks.energy_workflow_stack import EnergyWorkflowStack, stage_label  # noqa: E402
-from tests.asl_simulator import Execution, TaskError  # noqa: E402
-from tests.fake_dynamodb import FakeDynamoDB  # noqa: E402
-from tests.test_energy_api_service_infrastructure import ENV  # noqa: E402
-from tests import test_pipeline_stages as handler_tests  # noqa: E402
-from tests.test_run_store_contract import Clock  # noqa: E402
+from stacks.energy_pipeline_stack import EnergyPipelineStack
+from stacks.energy_run_history_stack import EnergyRunHistoryStack
+from stacks.energy_workflow_stack import EnergyWorkflowStack, stage_label
+
+from infrastructure.run_control import spec
+from src import pipeline_stages as stages
+from src import run_history_schema as schema
+from src.dynamodb_run_store import DynamoRunStore
+from src.executor_stepfunctions import _ARN_RE
+from src.run_store import TERMINAL_STATUSES, UPDATABLE_FIELDS
+from tests import test_pipeline_stages as handler_tests
+from tests.asl_simulator import Execution, TaskError
+from tests.fake_dynamodb import FakeDynamoDB
+from tests.test_energy_api_service_infrastructure import ENV
+from tests.test_energy_edge_infrastructure import ACCOUNT
+from tests.test_run_store_contract import Clock
 
 RUN_ID = handler_tests.RUN_ID
 aws = handler_tests.aws  # re-exported fixture: stage handlers run against S3 and Glue doubles

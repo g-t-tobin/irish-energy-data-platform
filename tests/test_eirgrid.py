@@ -31,9 +31,11 @@ def test_fetch_propagates_http_error():
     response = Mock()
     response.raise_for_status.side_effect = requests.HTTPError("Server error")
 
-    with patch("src.ingestion.eirgrid.requests.get", return_value=response):
-        with pytest.raises(requests.HTTPError):
-            fetch_demand_data()
+    with (
+        patch("src.ingestion.eirgrid.requests.get", return_value=response),
+        pytest.raises(requests.HTTPError),
+    ):
+        fetch_demand_data()
 
 
 def test_fetch_rejects_unexpected_response():
@@ -41,9 +43,11 @@ def test_fetch_rejects_unexpected_response():
     response.json.return_value = {"unexpected": []}
     response.raise_for_status.return_value = None
 
-    with patch("src.ingestion.eirgrid.requests.get", return_value=response):
-        with pytest.raises(ValueError, match="Unexpected EirGrid response"):
-            fetch_demand_data()
+    with (
+        patch("src.ingestion.eirgrid.requests.get", return_value=response),
+        pytest.raises(ValueError, match="Unexpected EirGrid response"),
+    ):
+        fetch_demand_data()
 
 
 def test_save_to_s3_uploads_json():
@@ -75,6 +79,8 @@ def test_fetch_rejects_api_error_even_with_http_200():
     }
     response.raise_for_status.return_value = None
 
-    with patch("src.ingestion.eirgrid.requests.get", return_value=response):
-        with pytest.raises(ValueError, match="EirGrid API error"):
-            fetch_demand_data()
+    with (
+        patch("src.ingestion.eirgrid.requests.get", return_value=response),
+        pytest.raises(ValueError, match="EirGrid API error"),
+    ):
+        fetch_demand_data()

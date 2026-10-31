@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.settings import Settings  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src import api
+from src.auth import JwksKeyProvider
+from src.settings import Settings
+from tests import auth_helpers as h
 
 VIEWER = h.auth_header(h.token(groups=["viewer"]))
 OPERATOR = h.auth_header(h.token(groups=["operator"]))

@@ -204,8 +204,8 @@ def daily_demand(days: int = Query(default=30, ge=1, le=90)) -> dict[str, Any]:
 )
 def start_run(
     request: RunRequest,
-    executor: PipelineExecutor = Depends(get_executor),
-    principal: Principal = Depends(require_operator),
+    executor: PipelineExecutor = Depends(get_executor),  # noqa: B008
+    principal: Principal = Depends(require_operator),  # noqa: B008
     idempotency_key: str | None = Header(
         default=None, alias="Idempotency-Key", pattern=r"^[A-Za-z0-9_-]{8,64}$"
     ),

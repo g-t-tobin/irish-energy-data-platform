@@ -2,7 +2,7 @@
 
 import io
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 import pandas as pd
@@ -67,7 +67,7 @@ def process_silver_object(bucket: str, silver_key: str) -> str:
 
     metrics = build_daily_metrics(df)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     key = (
         "gold/eirgrid/daily_demand/"
         f"run_date={now:%Y-%m-%d}/daily_demand.parquet"

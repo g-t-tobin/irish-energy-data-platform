@@ -13,7 +13,6 @@ from aws_cdk import aws_dynamodb as dynamodb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_stepfunctions as sfn
 from constructs import Construct
-
 from energy_config import (
     ACCOUNT,
     PIPELINE_FUNCTION_EXPORT,
@@ -21,6 +20,7 @@ from energy_config import (
     RUN_HISTORY_TABLE_NAME,
     STATE_MACHINE_NAME,
 )
+
 from infrastructure.run_control import spec
 
 

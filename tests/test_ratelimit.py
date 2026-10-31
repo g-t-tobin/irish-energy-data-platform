@@ -3,14 +3,14 @@ from unittest.mock import patch
 import pytest
 
 pytest.importorskip("httpx")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from src import api  # noqa: E402
-from src.auth import JwksKeyProvider  # noqa: E402
-from src.ratelimit import RateLimiter  # noqa: E402
-from src.run_store import RunStore  # noqa: E402
-from src.settings import RateLimits, Settings  # noqa: E402
-from tests import auth_helpers as h  # noqa: E402
+from src import api
+from src.auth import JwksKeyProvider
+from src.ratelimit import RateLimiter
+from src.run_store import RunStore
+from src.settings import RateLimits, Settings
+from tests import auth_helpers as h
 
 
 class Clock:
